@@ -1,8 +1,8 @@
 /**
- * @deepseek-ai/dsh-rxlab-app — the browser-surface bundle's runtime glue plugin
+ * @deepseek-ai/dsh-rxlab-app — the rxlab surface bundle's runtime glue plugin
  * plus the bundle patch (`cordis.patch.yml`, declared by the `dsh.bundle.patch`
- * manifest field). The plugin owns the browser-surface glue: it resolves
- * the built frontend dist (workspace knowledge of this bundle, never user
+ * manifest field). The plugin owns the surface glue: it resolves the built
+ * rxlab-web frontend dist (workspace knowledge of this bundle, never user
  * config), mounts the `frontend-static` fallback owner over it, registers the
  * harness-source and rxlab-surface prompt sections, the bash-visible rxlab
  * runtime variable, the process-token URL line, and the default-browser
@@ -142,16 +142,12 @@ export function resolveLanTrust(bindHost: string, extra: readonly string[]): Rxl
 
 /** Model-visible orientation and acceptance boundary for sessions created through `dsh rxlab`. */
 function rxlabSurfacePrompt(url: string): string {
-  const updateContract = 'The client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while '
-    + '`pnpm run dev:web` is also running from this same checkout to rebuild their bundles; verify that watcher before promising automatic updates. '
-    + 'Every other change — the apps/web shell and plain packages — requires rebuilding the affected Web artifacts and verifying this existing URL after a page refresh. '
-  return `You are interacting with the user through the rxlab GUI, the DeepSeek Harness browser surface at ${url}. `
+  return `You are interacting with the user through the rxlab GUI, the DeepSeek Harness workbench browser surface at ${url}. `
     + 'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI. '
     + 'The browser provides no implicit DOM, route, or screenshot context. '
-    + updateContract
-    + 'Starting another server does not update this GUI. '
-    + 'The apps/web Vite entry builds the shell but is not a standalone application because only a booted dsh surface such as `dsh rxlab` or `dsh web` injects window.__DSH_BOOT__. '
-    + 'Do not start a replacement server unless the user asks; if one is needed, use a managed background job and verify its exact URL.'
+    + 'The rxlab GUI is a standalone web application (apps/rxlab-web) served by this profile; the workbench business modules are not connected yet, '
+    + 'and no agent session is created through the GUI in the current build. '
+    + 'Starting another server does not update this GUI. Do not start a replacement server unless the user asks.'
 }
 
 /** Resolve the canonical loopback URL from the active Web server. */
@@ -165,16 +161,15 @@ function localRxlabUrl(ctx: Context): string {
  * Dist location is workspace knowledge of this bundle: anchored on the
  * frontend package manifest, not configured. Existence is a request-time
  * concern — the fallback owner reads files per request, so a composition
- * whose page never reaches the fallback seat (the static worker preview
- * ships its own page and carries no dist) boots without one.
+ * whose page never reaches the fallback seat boots without one.
  */
 function resolveDistIndex(): string {
   const require = createRequire(import.meta.url)
   try {
-    return join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist', 'index.html')
+    return join(dirname(require.resolve('@deepseek-ai/dsh-rxlab-web-frontend/package.json')), 'dist', 'index.html')
   } catch {
     /* v8 ignore next 2 -- reachable only when the frontend package is absent from the checkout */
-    throw new Error('rxlab-app: @deepseek-ai/dsh-web-frontend is not resolvable from this composition')
+    throw new Error('rxlab-app: @deepseek-ai/dsh-rxlab-web-frontend is not resolvable from this composition')
   }
 }
 

@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { HashRouter } from 'react-router-dom'
 
 import App from '@/app/App'
 import { ThemeProvider } from '@/lib/theme'
@@ -15,9 +15,11 @@ createRoot(rootElement).render(
   <StrictMode>
     <ThemeProvider>
       <TooltipProvider>
-        <BrowserRouter>
+        {/* Hash routing: frontend-static serves only real dist files, so deep
+            links must stay inside the page and survive full reloads. */}
+        <HashRouter>
           <App />
-        </BrowserRouter>
+        </HashRouter>
       </TooltipProvider>
     </ThemeProvider>
   </StrictMode>,
