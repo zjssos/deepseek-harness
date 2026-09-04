@@ -3,8 +3,9 @@
 # built to @deepseek-ai/dsh-rxlab-web-frontend/dist) and does not load the
 # Cordis browser client roster; the only browser-facing rows here are the
 # transport and browser-authentication half. The agent plane keeps the base
-# defaults until rxlab gains its own session UI, so sessions are not created
-# from this surface in the current build.
+# defaults: the SPA drives ordinary sessions through the Remote surface
+# (session-controller + api-remotes below) over the base process-wide agent
+# composition, not through per-session agent presets.
 # Applied after dsh-base's insert; rows here override base rows by id, with
 # the profile's own cordis.patch.yml and any --patch overlays still to come.
 #
@@ -25,9 +26,10 @@
       You are a coding agent powered by the {{model}} model, working inside rxlab,
       the DeepSeek Harness workbench for the glasses-packing domain
       (验光配镜工作台). Your working directory is {{cwd}}. The workbench is served
-      as a standalone browser app by this profile; its business modules and agent
-      session surface are not connected yet. If asked to operate them, say they
-      are not available instead of inventing tools or steps.
+      as a standalone browser app by this profile; its agent session surface is
+      live, while rxlab's business modules (商品采集、商品 Wiki、验光配镜、推荐校验、
+      效果图) are not connected yet. If asked to operate them, say they are not
+      available instead of inventing tools or steps.
 
 # ── rxlab durable-data isolation ────────────────────────────────────────────
 # rxlab keeps its settings and session-family storage under rxlab-specific home
@@ -88,10 +90,38 @@
 
     # Owns the browser-authentication half: mints the signed cookie from the
     # process token (frontend-static gates every index render through it) and
-    # is the future /api RPC gateway. The rxlabRuntime provider supplies the
+    # is the /api RPC gateway carrier. The rxlabRuntime provider supplies the
     # LAN literals for the /api trust fence.
     - id: connection
       name: '@deepseek-ai/dsh-client-connection'
       inject: [rxlabRuntime]
       config:
         trustedHosts: !!js ctx.rxlabRuntime.trustedHosts
+
+    # ── session Remote surface for the standalone SPA ──────────────────────────
+    # The base tree already carries the typert gateway, session log, workspace
+    # registry, and agent services; these rows expose sessions over the /api
+    # Remote channel and forward the api-session/* host events to the browser
+    # $events stream. The SPA embeds the Cordis client data layer (without the
+    # browser UI roster) and consumes the generated typed Remote namespaces.
+    - id: workspace
+      name: '@deepseek-ai/dsh-workspace'
+
+    - id: file-upload
+      name: '@deepseek-ai/dsh-client-file-upload'
+
+    - id: session-controller
+      name: '@deepseek-ai/dsh-api-session-controller'
+
+    - id: api-remotes
+      name: '@deepseek-ai/dsh-api-remotes'
+
+    # ── headless client data-layer runtime for the standalone SPA ──────────────
+    # The rxlab SPA embeds the Cordis client DATA layer without the browser UI
+    # roster: this row makes the modules node half compose window.__DSH_BOOT__
+    # and serve /plugins/<id>/client.js for every active dsh.client row above
+    # (typert-registry, api-gateway, connection, file-upload, api-remotes,
+    # session-controller). The SPA boots those bundles on a bare Cordis root;
+    # no ui-* or cordis-client-runner row is mounted.
+    - id: modules
+      name: '@deepseek-ai/dsh-client-modules'

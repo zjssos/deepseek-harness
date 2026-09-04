@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { ComponentType, LazyExoticComponent } from 'react'
 
 /** Workbench availability of one rail module. */
-export type ModuleStatus = 'planned'
+export type ModuleStatus = 'planned' | 'active'
 
 /** Props every module panel receives from the workspace host. */
 export interface ModulePanelProps {
