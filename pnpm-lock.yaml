@@ -518,6 +518,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../packages/llm/llm
+      '@deepseek-ai/dsh-rxlab-catalog':
+        specifier: workspace:^
+        version: link:../../packages/api/rxlab-catalog
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../packages/core/session
@@ -903,6 +906,28 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+
+  packages/api/rxlab-catalog:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../gateway
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
 
   packages/api/session-controller:
     dependencies:
@@ -1679,6 +1704,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-rxlab-catalog':
+        specifier: workspace:^
+        version: link:../../api/rxlab-catalog
       '@deepseek-ai/dsh-rxlab-web-frontend':
         specifier: workspace:^
         version: link:../../../apps/rxlab-web

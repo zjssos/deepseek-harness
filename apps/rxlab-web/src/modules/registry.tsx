@@ -57,10 +57,14 @@ export const MODULES: readonly ModuleDefinition[] = [
     label: '商品 Wiki',
     tagline: '查询与沉淀商品、镜架、镜片信息',
     description:
-      '商品 Wiki 模块：对采集入库的商品与镜架/镜片知识做统一检索与维护，作为后续验光推荐的数据底座。',
-    scope: ['商品检索', '知识条目维护', '镜架/镜片参数库'],
+      '商品 Wiki 模块：维护与检索结构化的商品 / 镜架 / 镜片 master data（rxlab_catalog 持久域，经 rxlabCatalog Remote 直连读写），作为后续验光推荐的数据底座。',
+    scope: [
+      '按镜架 / 镜片 / 采集商品过滤与检索',
+      '新增、编辑、删除与详情查看',
+      '刷新持久：数据落盘 $DSH_HOME/storages-rxlab/ 的 catalog 域',
+    ],
     icon: BookOpen,
-    status: 'planned',
+    status: 'active',
     panel: wikiPanel,
   },
   {
