@@ -5,7 +5,7 @@
  * clears it. DeepSeek's adapter resolves the default env ref `DEEPSEEK_API_KEY`
  * per request, which is what this dialog edits unless the user overrides it.
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 // Type-only: pulls the generated `remote.credentials` namespace declaration.
 import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
@@ -58,7 +58,8 @@ export function useCredential(
       })
     return () => { alive = false }
   }, [runtime, effectiveRef, nonce])
-  return { ...state, reload: () => { setNonce(value => value + 1) } }
+  const reload = useCallback(() => { setNonce(value => value + 1) }, [])
+  return { ...state, reload }
 }
 
 /** Store one credential ref value on the host; resolves false on rejection. */

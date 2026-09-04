@@ -35,13 +35,13 @@ export function ModelSettingsDialog({ runtime, open, onOpenChange }: ModelSettin
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const credential = useCredential(runtime, ref)
+  const { reload } = credential
   const effectiveRef = ref.trim().length > 0 ? ref.trim() : DEFAULT_API_KEY_REF
 
   // Refresh the described state whenever the dialog opens.
   useEffect(() => {
-    if (open) credential.reload()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+    if (open) reload()
+  }, [open, reload])
 
   const save = async (): Promise<void> => {
     if (secret.trim().length === 0 || busy) return
