@@ -30,8 +30,13 @@ export const MODULES: readonly ModuleDefinition[] = [
     label: '会话 Agent',
     tagline: '与配镜 agent 对话、查看运行过程与设置',
     description:
-      'agent 会话能力：SPA 内嵌 headless Cordis 客户端数据层（由 dsh rxlab profile 的 modules 行提供运行时与 /plugins 数据行），三栏工作台完成会话管理、消息收发与模型选择。',
-    scope: ['会话列表、新建、打开与重命名', '消息发送/停止与运行队列态', '消息渲染与工具摘要卡', '模型目录与选择'],
+      'agent 会话能力：SPA 内嵌 headless Cordis 客户端数据层（由 dsh rxlab profile 的 modules 行提供运行时与 /plugins 数据行），三栏工作台完成会话管理、消息收发、模型选择与 API key 配置。',
+    scope: [
+      '会话列表、新建、打开、重命名、归档（隐藏）与分支（Fork）',
+      '消息发送/停止、运行/队列态与队列项操作',
+      '消息渲染与工具摘要卡、历史分页',
+      '模型目录与选择、API Key 凭据配置',
+    ],
     icon: Bot,
     status: 'active',
     panel: agentPanel,

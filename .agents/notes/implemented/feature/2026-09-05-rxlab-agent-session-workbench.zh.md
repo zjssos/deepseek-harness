@@ -21,6 +21,10 @@ rxlab（`dsh rxlab` 配镜工作台 profile）需要在其独立 SPA（`apps/rxl
 
 输入区通过会话面的 `beginSubmission` + `prompt` 队列路径发送，运行中按钮从 `snapshot.running` 经 `face.cancel()` 变为停止，并在 `snapshot.queue` 列出排队项。模型选择每次连接加载一次 Host 代目录（`remote.session.modelCatalog`），经 `remote.session.selectModel` 提交；当前值在成功选择前为目录默认值。无 API key 发送会走正常 remote 错误路径，渲染为 agent 错误条和/或提示错误行——面板保持可用。
 
+**host 暴露 settings/credentials 与 workspace Remote 命名空间。** `packages/bundle/rxlab-app/cordis.patch.yml` 激活 `dsh-api-settings-controller` 与 `dsh-api-workspace-controller` 行（依赖已在 bundle 中声明），SPA 因此可及 `remote.credentials`（describe/set/unset）与 `remote.workspace`（archiveSession）。工作台 header 的模型设置弹窗编辑 DeepSeek 适配器解析的凭据（默认 `DEEPSEEK_API_KEY`，引用名可改），经 `credentials/set` 写入 `$DSH_HOME/.credentials.yaml`；配置态由 `credentials/describe` 读回，清除走 `credentials/unset`。
+
+**会话管理覆盖对象层其余动词。** 行菜单归档会话（workspace 域归档语义：行隐藏、日志与核算保留）。因 rxlab 列表行来自 `session-controller.list` 而归档集属 workspace 域，`useArchivedSessions` 每次连接从 `workspace.follow` baseline 读一次完整归档集，并在每次归档被接受后本地扩展；归档当前会话回到无会话视图。消息行提供分支入口（`sessions.fork({ sessionId, atSeq: row.seq, increaseTitle: true })` 并打开子会话——host 在该 seq 或其后的第一个 turn/end 处切分）；`snapshot.hasMore` 时显示「加载更早」按钮；队列行经 `face.updateQueue` 提供移除/提前；header 控制经 `sessions.clear()` 清空当前选择。
+
 模块注册表条目升级为 `status: 'active'`，scope 文案描述已交付的工作台。
 
 ## 备选方案
@@ -35,10 +39,12 @@ rxlab（`dsh rxlab` 配镜工作台 profile）需要在其独立 SPA（`apps/rxl
 
 **用会话持久模型选择投影做触发器标签。** 投影（`next`/`lastUsed`）可用，但渲染它需要投影存储座位；显示目录默认值再显示最近一次本地成功选择，让输入区自包含。
 
+**复用官方 workspace 浏览器做会话列表。** 归档集与 workspace 分组在 `ui-workspace` 客户端机制里；rxlab 保留 `session-controller.list` 数据源，改为一次性读 `workspace.follow` baseline 过滤归档 id，而不安装 workspace 客户端对象层。
+
 ## 后果
 
-rxlab SPA 现在能在浏览器中跑真实 host 会话：列表/新建/打开/重命名、排队发送、停止、模型目录选择，以及带工具卡的会话记录，且无 key 发送不崩溃。模块保持独立于客户端 roster，因此在对象层未变时不会因 `packages/client` 插槽契约变更而回归。流式（实时块）、附件上传、队列编辑/steer、持久模型投影展示留待后续；会话仅由持久事件渲染，客户端本地 pending 回显目前只以队列计数呈现。
+rxlab SPA 现在能在浏览器中跑真实 host 会话：列表/新建/打开/重命名/归档/分支、排队发送、停止、队列项移除/提前、历史分页、模型目录选择，以及带工具卡的会话记录，且无 key 发送不崩溃。工作台还能就地编辑模型凭据，新 host 无需终端或 Models 页即可配好 key 使用。模块保持独立于客户端 roster，因此在对象层未变时不会因 `packages/client` 插槽契约变更而回归。流式（实时块）、附件上传、队列编辑、取消归档、持久模型投影展示留待后续；会话仅由持久事件渲染，客户端本地 pending 回显目前只以队列计数呈现。
 
 ## 测试
 
-`dsh rxlab` 上的浏览器冒烟验证「已连接」徽标、持久化列表、新建/打开/重命名、目录支撑的模型选择，以及无 key 发送失败进入错误条而不崩溃。`apps/rxlab-web` typecheck 与 Vite 构建通过；host 构建（`pnpm run build:lib:host`）在本工作之外无改动（早前的 modules 行补丁已在 rxlab profile 工作中验证）。
+`dsh rxlab` 上的浏览器冒烟验证「已连接」徽标、持久化列表、新建/打开/重命名、归档跨刷新持久（且归档当前会话回到无会话视图）、分支打开带标题的子会话、目录支撑的模型选择、凭据保存/清除往返写入 `$DSH_HOME/.credentials.yaml`，以及无 key 发送失败进入错误条而不崩溃。`apps/rxlab-web` typecheck 与 Vite 构建通过；host 构建（`pnpm run build:lib:host`）在本工作之外无改动（早前的行补丁已在 rxlab profile 工作中验证）。

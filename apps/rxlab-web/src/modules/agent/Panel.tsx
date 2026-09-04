@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { CircleAlert, Loader2 } from 'lucide-react'
+import { CircleAlert, Loader2, LogOut, Settings } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ModulePanelProps } from '@/modules/types'
@@ -9,8 +10,10 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RxlabClientRuntime } from './client'
 import { Composer } from './Composer'
 import { MessageList } from './MessageList'
+import { ModelSettingsDialog } from './ModelSettingsDialog'
 import { SessionSidebar } from './SessionSidebar'
 import { foldTranscript } from './transcript'
+import { useArchivedSessions } from './use-archived-sessions'
 import { useModelCatalog } from './use-model-catalog'
 import {
   useConnected,
@@ -42,8 +45,11 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const connected = useConnected(runtime)
   const view = useSessionView(runtime, list)
   const modelState = useModelCatalog(runtime, connected)
+  const archived = useArchivedSessions(runtime, connected)
   const [creating, setCreating] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (connected) void actions.refresh()
@@ -75,15 +81,38 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
     return undefined
   }
 
+  const onArchive = async (id: SessionId): Promise<boolean> => {
+    setBanner(null)
+    setArchiving(true)
+    try {
+      const ok = await actions.archive(id)
+      if (!ok) {
+        setBanner('归档失败：host 拒绝了该操作。')
+        return false
+      }
+      archived.markArchived(id)
+      if (view?.sessionId === id) actions.clear()
+      return true
+    } catch (cause) {
+      setBanner(cause instanceof Error ? cause.message : String(cause))
+      return false
+    } finally {
+      setArchiving(false)
+    }
+  }
+
   return (
     <div className="flex h-[calc(100svh-10.5rem)] min-h-[34rem] overflow-hidden rounded-xl border shadow-sm">
       <SessionSidebar
         list={list}
+        archivedIds={archived.ids}
         connected={connected}
         creating={creating}
+        archiving={archiving}
         onCreate={() => { void onCreate() }}
         onOpen={actions.open}
         onRename={onRename}
+        onArchive={onArchive}
       />
       <main className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b px-4">
@@ -99,9 +128,33 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
               ? <Badge variant="destructive">打开失败</Badge>
               : null}
           </div>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {connected ? '已连接' : '连接中'}
-          </span>
+          <div className="flex shrink-0 items-center gap-1">
+            {view !== undefined ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7"
+                title="关闭当前会话"
+                aria-label="关闭当前会话"
+                onClick={actions.clear}
+              >
+                <LogOut className="size-3.5" />
+              </Button>
+            ) : null}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              title="模型 / API Key 设置"
+              aria-label="模型 / API Key 设置"
+              onClick={() => { setSettingsOpen(true) }}
+            >
+              <Settings className="size-3.5" />
+            </Button>
+            <span className="ml-1 text-xs text-muted-foreground">
+              {connected ? '已连接' : '连接中'}
+            </span>
+          </div>
         </header>
         {banner !== null ? (
           <div className="flex items-start gap-2 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
@@ -109,7 +162,13 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
             <span className="whitespace-pre-wrap">{banner}</span>
           </div>
         ) : null}
-        <MessageList view={view} rows={rows} />
+        <MessageList
+          view={view}
+          rows={rows}
+          onForkAt={(seq) => {
+            if (view !== undefined) void actions.forkAt(view.sessionId, seq)
+          }}
+        />
         {view === undefined
           ? null
           : (
@@ -121,6 +180,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
             />
           )}
       </main>
+      <ModelSettingsDialog runtime={runtime} open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   )
 }

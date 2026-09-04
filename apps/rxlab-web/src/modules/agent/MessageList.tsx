@@ -1,6 +1,7 @@
-import { Bot, CircleAlert, Loader2, User } from 'lucide-react'
+import { Bot, CircleAlert, GitBranch, Loader2, SkipForward, User, X } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,10 +15,27 @@ function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`
 }
 
-/** One user text message bubble. */
-function UserMessage({ row }: { row: Extract<TranscriptRow, { kind: 'user' }> }) {
+/** Fork entry shown on hover for user/assistant rows. */
+function ForkButton({ seq, onForkAt }: { seq: number; onForkAt: (seq: number) => void }) {
   return (
-    <div className="flex justify-end">
+    <Button
+      size="icon"
+      variant="ghost"
+      className="size-6 shrink-0 opacity-0 group-hover:opacity-100"
+      title="从此处新建分支会话"
+      aria-label="从此处新建分支会话"
+      onClick={() => { onForkAt(seq) }}
+    >
+      <GitBranch className="size-3.5" />
+    </Button>
+  )
+}
+
+/** One user text message bubble. */
+function UserMessage({ row, onForkAt }: { row: Extract<TranscriptRow, { kind: 'user' }>; onForkAt: (seq: number) => void }) {
+  return (
+    <div className="group flex items-start justify-end gap-1">
+      <ForkButton seq={row.seq} onForkAt={onForkAt} />
       <div className="flex max-w-[85%] items-start gap-2">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-primary text-primary-foreground">
           <User className="size-3.5" />
@@ -34,9 +52,9 @@ function UserMessage({ row }: { row: Extract<TranscriptRow, { kind: 'user' }> })
 }
 
 /** One assistant reply bubble with optional reasoning and interruption marks. */
-function AssistantMessage({ row }: { row: Extract<TranscriptRow, { kind: 'assistant' }> }) {
+function AssistantMessage({ row, onForkAt }: { row: Extract<TranscriptRow, { kind: 'assistant' }>; onForkAt: (seq: number) => void }) {
   return (
-    <div className="flex justify-start">
+    <div className="group flex items-start gap-1">
       <div className="flex max-w-[85%] items-start gap-2">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-muted">
           <Bot className="size-3.5" />
@@ -54,6 +72,7 @@ function AssistantMessage({ row }: { row: Extract<TranscriptRow, { kind: 'assist
           {row.interrupted ? <p className="mt-1 text-xs opacity-70">（已中断）</p> : null}
         </div>
       </div>
+      <ForkButton seq={row.seq} onForkAt={onForkAt} />
     </div>
   )
 }
@@ -90,12 +109,12 @@ function ToolCard({ row }: { row: Extract<TranscriptRow, { kind: 'tool' }> }) {
   )
 }
 
-function RowView({ row }: { row: TranscriptRow }) {
+function RowView({ row, onForkAt }: { row: TranscriptRow; onForkAt: (seq: number) => void }) {
   switch (row.kind) {
     case 'user':
-      return <UserMessage row={row} />
+      return <UserMessage row={row} onForkAt={onForkAt} />
     case 'assistant':
-      return <AssistantMessage row={row} />
+      return <AssistantMessage row={row} onForkAt={onForkAt} />
     case 'tool':
       return <ToolCard row={row} />
   }
@@ -106,10 +125,12 @@ export interface MessageListProps {
   readonly view: SessionView | undefined
   /** Folded conversation rows for the staged window. */
   readonly rows: readonly TranscriptRow[]
+  /** Fork one message row (seq) into a new child session. */
+  readonly onForkAt: (seq: number) => void
 }
 
 /** Main conversation transcript pane. */
-export function MessageList({ view, rows }: MessageListProps) {
+export function MessageList({ view, rows, onForkAt }: MessageListProps) {
   if (view === undefined) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -118,7 +139,7 @@ export function MessageList({ view, rows }: MessageListProps) {
       </div>
     )
   }
-  const { snapshot } = view
+  const { snapshot, face: viewFace } = view
   const opening = snapshot.openState === 'cold' || snapshot.openState === 'loading'
   const lastAgentError = snapshot.lastAgentError
   return (
@@ -136,21 +157,51 @@ export function MessageList({ view, rows }: MessageListProps) {
         </div>
       ) : null}
       {snapshot.queue.length > 0 ? (
-        <div className="flex items-center gap-2 border-b px-4 py-1.5 text-xs text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
-          <span>{snapshot.queue.length} 条消息排队中</span>
-          <span className="truncate">{snapshot.queue[0]?.preview}</span>
+        <div className="space-y-1 border-b px-3 py-2">
+          {snapshot.queue.map((item, index) => (
+            <div key={item.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3 shrink-0 animate-spin" />
+              <span className="min-w-0 flex-1 truncate">{index + 1}. {item.preview}</span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0"
+                title="移到最前并打断当前运行"
+                disabled={!viewFace}
+                onClick={() => { void viewFace?.updateQueue(item.id, { kind: 'steer' }) }}
+              >
+                <SkipForward className="size-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0"
+                title="从队列移除"
+                disabled={!viewFace}
+                onClick={() => { void viewFace?.updateQueue(item.id, { kind: 'remove' }) }}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          ))}
         </div>
       ) : null}
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 p-4">
+          {snapshot.hasMore && !snapshot.loadingOlder ? (
+            <div className="flex justify-center">
+              <Button size="sm" variant="outline" onClick={() => { void viewFace?.loadOlder() }}>
+                加载更早消息
+              </Button>
+            </div>
+          ) : null}
           {rows.length === 0 && !opening && snapshot.blank ? (
             <div className="flex h-full flex-col items-center justify-center gap-1 pt-16 text-center">
               <p className="text-sm text-muted-foreground">这是一个新会话。</p>
               <p className="text-xs text-muted-foreground/70">在下方向 agent 发送第一条消息。</p>
             </div>
           ) : null}
-          {rows.map(row => <RowView key={`${row.kind}-${row.seq}-${'callId' in row ? row.callId : ''}`} row={row} />)}
+          {rows.map(row => <RowView key={`${row.kind}-${row.seq}-${'callId' in row ? row.callId : ''}`} row={row} onForkAt={onForkAt} />)}
           {snapshot.running && rows.length === 0
             ? (
               <div className="flex items-center gap-2 px-1 text-sm text-muted-foreground">

@@ -11,9 +11,13 @@ import type {
   SessionFace,
   SessionListState,
   SessionSnapshot,
-  SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the generated `remote.session`/`remote.workspace` and
+// `remote.credentials` namespace declarations into the ClientRemote type.
+import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
+import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
 
 /**
  * React adapters over the embedded Cordis client data layer. rxlab-web is a
@@ -70,22 +74,60 @@ export function useSessionList(runtime: RxlabClientRuntime | undefined): Session
   return useSyncExternalStore(subscribe, getSnapshot)
 }
 
-/** Refresh/current/open/create helpers bound to one ready runtime. */
-export function useSessionActions(runtime: RxlabClientRuntime | undefined): {
+/** Refresh/current/open/create/clear/archive/fork helpers bound to one runtime. */
+export function useSessionActions(runtime: RxlabClientRuntime | undefined): SessionActions {
+  return useMemo<SessionActions>(() => {
+    if (runtime === undefined) {
+      return {
+        refresh: async () => {},
+        create: async () => undefined,
+        open: () => {},
+        clear: () => {},
+        archive: async () => false,
+        forkAt: async () => undefined,
+      }
+    }
+    return {
+      refresh: async () => { await runtime.sessions.refresh() },
+      create: async () => {
+        const id = await runtime.sessions.create({})
+        runtime.sessions.open(id)
+        return id
+      },
+      open: (id) => { runtime.sessions.open(id) },
+      clear: () => { runtime.sessions.clear() },
+      archive: async (id) => {
+        const result = await runtime.remote.workspace.archiveSession({ sessionId: id })
+        return result.ok
+      },
+      forkAt: async (id, seq) => {
+        try {
+          const childId = await runtime.sessions.fork({ sessionId: id, atSeq: seq, increaseTitle: true })
+          runtime.sessions.open(childId)
+          return childId
+        } catch {
+          // Fork or child-title failure leaves the source view unchanged.
+          return undefined
+        }
+      },
+    }
+  }, [runtime])
+}
+
+/** Session-management verbs the workbench UI drives. */
+export interface SessionActions {
+  /** Re-pull the Host session list. */
   readonly refresh: () => Promise<void>
+  /** Create and open a blank session. */
   readonly create: () => Promise<string | undefined>
-  readonly open: (id: SessionSummary['id']) => void
-} {
-  return useMemo(() => ({
-    refresh: async () => { await runtime?.sessions.refresh() },
-    create: async () => {
-      if (runtime === undefined) return undefined
-      const id = await runtime.sessions.create({})
-      runtime.sessions.open(id)
-      return id
-    },
-    open: (id) => { runtime?.sessions.open(id) },
-  }), [runtime])
+  /** Select one listed session as current. */
+  readonly open: (id: SessionId) => void
+  /** Clear the current selection back to the no-session view. */
+  readonly clear: () => void
+  /** Archive one session (hides its row; the log and accounting stay intact). */
+  readonly archive: (id: SessionId) => Promise<boolean>
+  /** Fork at one row's seq and open the child; resolves undefined on failure. */
+  readonly forkAt: (id: SessionId, seq: number) => Promise<string | undefined>
 }
 
 /** Whether the browser transport generation ($events ready) is established. */

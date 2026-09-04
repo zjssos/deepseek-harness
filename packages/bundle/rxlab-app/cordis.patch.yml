@@ -116,6 +116,17 @@
     - id: api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
 
+    # Exposes the `settings`/`credentials` Remote namespaces (the SPA's model
+    # settings dialog reads and writes `$DSH_HOME/.credentials.yaml` through
+    # credentials/describe + credentials/set) and the `workspace` Remote
+    # namespace (the SPA archives sessions through workspace.archiveSession —
+    # archive hides the row and keeps the log, matching the web product).
+    - id: settings-controller
+      name: '@deepseek-ai/dsh-api-settings-controller'
+
+    - id: workspace-controller
+      name: '@deepseek-ai/dsh-api-workspace-controller'
+
     # ── headless client data-layer runtime for the standalone SPA ──────────────
     # The rxlab SPA embeds the Cordis client DATA layer without the browser UI
     # roster: this row makes the modules node half compose window.__DSH_BOOT__

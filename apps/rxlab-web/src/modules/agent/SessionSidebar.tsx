@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, MoreHorizontal, Plus, SquarePen } from 'lucide-react'
+import { Archive, Loader2, MoreHorizontal, Plus, SquarePen } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,36 +20,47 @@ import {
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export interface SessionSidebarProps {
   /** Live host session list; undefined until the first list snapshot lands. */
   readonly list: SessionListState | undefined
+  /** Session ids hidden by the workspace archive set. */
+  readonly archivedIds: readonly SessionId[]
   readonly connected: boolean
   readonly creating: boolean
   readonly onCreate: () => void
   readonly onOpen: (id: SessionId) => void
   /** Rename one listed session; resolves undefined when the host rejected it. */
   readonly onRename: (id: SessionId, title: string) => Promise<string | undefined>
+  /** Archive one listed session; resolves false when the host rejected it. */
+  readonly onArchive: (id: SessionId) => Promise<boolean>
+  /** Whether an archive is in flight (disables the row menu while running). */
+  readonly archiving: boolean
 }
 
-/** Left rail: session list with create/open/rename. */
+/** Left rail: session list with create/open/rename/archive. */
 export function SessionSidebar({
   list,
+  archivedIds,
   connected,
   creating,
   onCreate,
   onOpen,
   onRename,
+  onArchive,
+  archiving,
 }: SessionSidebarProps) {
   const [renaming, setRenaming] = useState<SessionId | undefined>(undefined)
   const [renamingTitle, setRenamingTitle] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const hidden = new Set(archivedIds)
   const rows = list === undefined
     ? []
-    : list.ids.map(id => list.byId[id]).filter(row => row !== undefined)
+    : list.ids.map(id => list.byId[id])
+      .filter((row): row is SessionSummary => row !== undefined && !hidden.has(row.id))
 
   const beginRename = (id: SessionId): void => {
     setRenamingTitle(list?.byId[id]?.title ?? '')
@@ -130,6 +141,13 @@ export function SessionSidebar({
                   <DropdownMenuItem onClick={() => { beginRename(row.id) }}>
                     <SquarePen className="size-4" />
                     重命名
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={archiving || !connected}
+                    onClick={() => { void onArchive(row.id) }}
+                  >
+                    <Archive className="size-4" />
+                    归档（隐藏）
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

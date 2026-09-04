@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-05-rxlab-agent-session-workbench.md
-2026-09-05-rxlab-agent-session-workbench.md: 4324e7eeb5f5fb63317316d0fce59dc6503fd203
-2026-09-05-rxlab-agent-session-workbench.zh.md: 5f11c4b5b7762b7d7db2b146c5ad4efaa0750497
+2026-09-05-rxlab-agent-session-workbench.md: e1a81ef3d7a8507a6084847f00f38a0a19569c7d
+2026-09-05-rxlab-agent-session-workbench.zh.md: e5e0f2055e8a1ce7d4345b0d5233769abba609e6
