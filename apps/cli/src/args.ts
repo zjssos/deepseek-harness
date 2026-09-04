@@ -10,8 +10,9 @@
  * `dsh --profile tui --resume abc` boots the tui profile with `--resume abc`,
  * and `dsh --profile web -h` prints the web app's help, not this one's.
  *
- * `web` is a hardcoded alias for `--profile web`; `plugin` manages a profile's
- * plugin dependencies by forwarding to pnpm.
+ * `web` and `rxlab` are hardcoded aliases for `--profile web` and
+ * `--profile rxlab`; `plugin` manages a profile's plugin dependencies by
+ * forwarding to pnpm.
  * @module @deepseek-ai/dsh/args
  */
 
@@ -64,6 +65,7 @@ const collect = (value: string, previous: string[] = []): string[] => [...previo
 const HELP_EXAMPLES = `
 Examples:
   dsh --profile web                          boot the web profile (same as: dsh web)
+  dsh rxlab                                  boot the rxlab profile (same as: dsh --profile rxlab)
   dsh --profile headless "run the tests"     answer one task, print the result, and exit
   dsh --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
   dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
@@ -166,6 +168,21 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .action((args: string[], options: BootOptions) => {
       rejectParentOptions('web')
       resolved = resolveBoot(web, 'web', options, args)
+    })
+
+  const rxlab = program.command('rxlab').description('boot the rxlab profile (alias of --profile rxlab); the rxlab app\'s own flags follow')
+  rxlab
+    .helpOption(false)
+    .allowUnknownOption()
+    .passThroughOptions()
+    .enablePositionalOptions()
+    .argument('[args...]', 'arguments for the rxlab app (see: dsh rxlab --help)')
+    .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
+    .option('--dump-config', 'print the composed rxlab-profile tree (with the user layer and any --patch) and exit')
+    .option('--dump-default-config', 'print the rxlab profile\'s bundle layers (no user layer) and exit')
+    .action((args: string[], options: BootOptions) => {
+      rejectParentOptions('rxlab')
+      resolved = resolveBoot(rxlab, 'rxlab', options, args)
     })
 
   const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')
