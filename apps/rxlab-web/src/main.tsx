@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 
 import App from '@/app/App'
 import { ThemeProvider } from '@/lib/theme'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 import './index.css'
 
@@ -13,9 +14,11 @@ if (rootElement === null) throw new Error('rxlab-web: #root element is missing f
 createRoot(rootElement).render(
   <StrictMode>
     <ThemeProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <TooltipProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </TooltipProvider>
     </ThemeProvider>
   </StrictMode>,
 )

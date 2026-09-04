@@ -1,2 +1,0 @@
-import{t as e}from"./index-Cx6CWmRS.js";import{t}from"./module-placeholder-CYAAZKnh.js";var n=e();function r({module:e}){return(0,n.jsx)(t,{module:e})}export{r as default};
-//# sourceMappingURL=Panel-DY-qKMVq.js.map

@@ -141,10 +141,17 @@ External packages **directly declared** only by repository tooling, test infrast
 | Package | License |
 | --- | --- |
 | [`@braintree/sanitize-url`](https://github.com/braintree/sanitize-url) | MIT |
+| [`@dnd-kit/core`](https://github.com/clauderic/dnd-kit) | MIT |
+| [`@dnd-kit/modifiers`](https://github.com/clauderic/dnd-kit) | MIT |
+| [`@dnd-kit/sortable`](https://github.com/clauderic/dnd-kit) | MIT |
+| [`@dnd-kit/utilities`](https://github.com/clauderic/dnd-kit) | MIT |
 | [`@lexical/headless`](https://github.com/facebook/lexical) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@stylistic/eslint-plugin`](https://github.com/eslint-stylistic/eslint-stylistic) | MIT |
+| [`@tabler/icons-react`](https://github.com/tabler/tabler-icons) | MIT |
+| [`@tailwindcss/vite`](https://github.com/tailwindlabs/tailwindcss) | MIT |
+| [`@tanstack/react-table`](https://github.com/TanStack/table) | MIT |
 | [`@testing-library/dom`](https://github.com/testing-library/dom-testing-library) | MIT |
 | [`@testing-library/react`](https://github.com/testing-library/react-testing-library) | MIT |
 | [`@types/babel__code-frame`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
@@ -166,6 +173,8 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`@vitest/coverage-v8`](https://github.com/vitest-dev/vitest) | MIT |
 | [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg) | MIT |
 | [`@yarnpkg/cli-dist`](https://github.com/yarnpkg/berry) | BSD-2-Clause |
+| [`class-variance-authority`](https://github.com/joe-bell/cva) | Apache-2.0 |
+| [`cn`](https://github.com/shadcn-ui/cn) | MIT |
 | [`cytoscape`](https://github.com/cytoscape/cytoscape.js) | MIT |
 | [`cytoscape-cose-bilkent`](https://github.com/cytoscape/cytoscape.js-cose-bilkent) | MIT |
 | [`dayjs`](https://github.com/iamkun/dayjs) | MIT |
@@ -180,15 +189,25 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`jsdom`](https://github.com/jsdom/jsdom) | MIT |
 | [`lefthook`](https://github.com/evilmartians/lefthook) | MIT |
 | [`lightningcss`](https://github.com/parcel-bundler/lightningcss) | MPL-2.0 |
+| [`lucide-react`](https://github.com/lucide-icons/lucide) | ISC |
 | [`mermaid`](https://github.com/mermaid-js/mermaid) | MIT |
+| [`next-themes`](https://github.com/pacocoursey/next-themes) | MIT |
 | [`oxlint`](https://github.com/oxc-project/oxc) | MIT |
 | [`oxlint-tsgolint`](https://github.com/oxc-project/tsgolint) | MIT |
 | [`playwright`](https://github.com/microsoft/playwright) | Apache-2.0 |
 | [`publint`](https://github.com/publint/publint) | MIT |
+| [`radix-ui`](https://github.com/radix-ui/primitives) | MIT |
+| [`react-router-dom`](https://github.com/remix-run/react-router) | MIT |
+| [`recharts`](https://github.com/recharts/recharts) | MIT |
 | [`smol-toml`](https://github.com/squirrelchat/smol-toml) | BSD-3-Clause |
+| [`sonner`](https://github.com/emilkowalski/sonner) | MIT |
 | [`spdx-expression-parse`](https://github.com/jslicense/spdx-expression-parse.js) | MIT |
+| [`tailwind-merge`](https://github.com/dcastil/tailwind-merge) | MIT |
+| [`tailwindcss`](https://github.com/tailwindlabs/tailwindcss) | MIT |
+| [`tailwindcss-animate`](https://github.com/jamiebuilds/tailwindcss-animate) | MIT |
 | [`tsdown`](https://github.com/rolldown/tsdown) | MIT |
 | [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server) | Apache-2.0 |
+| [`vaul`](https://github.com/emilkowalski/vaul) | MIT |
 | [`vite`](https://github.com/vitejs/vite) | MIT |
 | [`vite-tsconfig-paths`](https://github.com/aleclarson/vite-tsconfig-paths) | MIT |
 | [`vitepress`](https://github.com/vuejs/vitepress) | MIT |
