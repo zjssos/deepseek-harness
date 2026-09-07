@@ -26,9 +26,11 @@
       You are a coding agent powered by the {{model}} model, working inside rxlab,
       the DeepSeek Harness workbench for the glasses-packing domain
       (验光配镜工作台). Your working directory is {{cwd}}. The workbench is served
-      as a standalone browser app by this profile; its agent session surface and
-      the 商品 Wiki module (rxlab catalog master data) are live, while rxlab's
-      other business modules (商品采集、验光配镜、推荐校验、效果图) are not
+      as a standalone browser app by this profile; its agent session surface,
+      the 商品 Wiki module (rxlab catalog master data), and the 商品采集 module
+      (rxlab collect: platform/shop/product-link assets with deterministic link
+      captures into the rxlab_collect domain) are live, while rxlab's
+      other business modules (验光配镜、推荐校验、效果图) are not
       connected yet. If asked to operate the unconnected modules, say they are
       not available instead of inventing tools or steps.
 
@@ -137,12 +139,22 @@
     - id: rxlab-catalog
       name: '@deepseek-ai/dsh-rxlab-catalog'
 
+    # Owns the `rxlabCollect` Remote namespace over the `rxlab_collect` storage
+    # domain (link assets, capture history, run batches; records land under the
+    # storages-rxlab root above). Link runs use deterministic headless chromium
+    # collectors with a serial in-process queue, so the module captures without
+    # a model key. The package is also a dsh.client row, so the SPA's headless
+    # boot mounts the namespace from its own /client bundle.
+    - id: rxlab-collect
+      name: '@deepseek-ai/dsh-rxlab-collect'
+
     # ── headless client data-layer runtime for the standalone SPA ──────────────
     # The rxlab SPA embeds the Cordis client DATA layer without the browser UI
     # roster: this row makes the modules node half compose window.__DSH_BOOT__
     # and serve /plugins/<id>/client.js for every active dsh.client row above
     # (typert-registry, api-gateway, connection, file-upload, api-remotes,
-    # session-controller, rxlab-catalog). The SPA boots those bundles on a bare
-    # Cordis root; no ui-* or cordis-client-runner row is mounted.
+    # session-controller, rxlab-catalog, rxlab-collect). The SPA boots those
+    # bundles on a bare Cordis root; no ui-* or cordis-client-runner row is
+    # mounted.
     - id: modules
       name: '@deepseek-ai/dsh-client-modules'

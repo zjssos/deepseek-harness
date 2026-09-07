@@ -44,12 +44,16 @@ export const MODULES: readonly ModuleDefinition[] = [
   {
     id: 'collect',
     label: '采集',
-    tagline: '从电商平台采集眼镜商品资料',
+    tagline: '平台/店铺/商品链接资产与确定性采集落盘',
     description:
-      '商品采集模块：抓取与清洗电商眼镜商品（主图、参数、价格、SKU），产出结构化商品条目进入商品 Wiki。',
-    scope: ['商品源配置', '采集任务与进度', '字段清洗与入库'],
+      '商品采集模块：登记 平台 → 店铺 → 商品链接（单条或 CSV 批量），勾选成采集批次，由确定性 L1 采集器（headless 浏览器）逐条抓取标题、价格、购买链接等并落盘 rxlab_collect 原始域；无需模型 key，可重试与查看采集历史。',
+    scope: [
+      '平台/店铺/商品链接资产与 CSV 批量导入',
+      '勾选链接成采集批次、逐条状态与失败重试',
+      '采集记录（标题/价格/购买链接）落盘与历史查看',
+    ],
     icon: ShoppingCart,
-    status: 'planned',
+    status: 'active',
     panel: collectPanel,
   },
   {

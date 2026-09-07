@@ -521,6 +521,9 @@ importers:
       '@deepseek-ai/dsh-rxlab-catalog':
         specifier: workspace:^
         version: link:../../packages/api/rxlab-catalog
+      '@deepseek-ai/dsh-rxlab-collect':
+        specifier: workspace:^
+        version: link:../../packages/api/rxlab-collect
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../packages/core/session
@@ -909,6 +912,31 @@ importers:
 
   packages/api/rxlab-catalog:
     dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../gateway
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+
+  packages/api/rxlab-collect:
+    dependencies:
+      playwright:
+        specifier: ^1.62.1
+        version: 1.63.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1707,6 +1735,9 @@ importers:
       '@deepseek-ai/dsh-rxlab-catalog':
         specifier: workspace:^
         version: link:../../api/rxlab-catalog
+      '@deepseek-ai/dsh-rxlab-collect':
+        specifier: workspace:^
+        version: link:../../api/rxlab-collect
       '@deepseek-ai/dsh-rxlab-web-frontend':
         specifier: workspace:^
         version: link:../../../apps/rxlab-web
@@ -16754,9 +16785,19 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  playwright-core@1.63.0:
+    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   playwright@1.61.1:
     resolution: {integrity: sha512-DWnY5o3YbLWK4GovuAVwpqL+1VwGNdUGrRr++8j8PtQQzvAVZUIMjKQ90fY689sEJZJBbZVw1rXaOKSTitkzPQ==}
     engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.63.0:
+    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
+    engines: {node: '>=20'}
     hasBin: true
 
   points-on-curve@0.2.0:
@@ -23965,11 +24006,17 @@ snapshots:
 
   playwright-core@1.61.1: {}
 
+  playwright-core@1.63.0: {}
+
   playwright@1.61.1:
     dependencies:
       playwright-core: 1.61.1
     optionalDependencies:
       fsevents: 2.3.2
+
+  playwright@1.63.0:
+    dependencies:
+      playwright-core: 1.63.0
 
   points-on-curve@0.2.0: {}
 
