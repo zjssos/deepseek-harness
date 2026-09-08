@@ -1,4 +1,4 @@
-import { Bot, CircleAlert, GitBranch, Loader2, SkipForward, User, X } from 'lucide-react'
+import { Bot, CircleAlert, GitBranch, Loader2, LibraryBig, SkipForward, User, X } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,8 @@ import type { TranscriptRow } from './transcript'
 
 const MAX_ARGUMENTS_CHARS = 240
 const MAX_RESULT_CHARS = 500
+/** Expanded context body keeps an inner scrollport instead of stretching the transcript. */
+const MAX_CONTEXT_CHARS = 20_000
 
 function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`
@@ -109,6 +111,30 @@ function ToolCard({ row }: { row: Extract<TranscriptRow, { kind: 'tool' }> }) {
   )
 }
 
+/**
+ * One non-user injection (workspace instructions, skill catalog, …), collapsed
+ * to a producer-label line. Expanding reveals the model-facing text verbatim,
+ * bounded to an inner scrollport so preset-assembled context never stretches
+ * the conversation flow.
+ */
+function ContextRowView({ row }: { row: Extract<TranscriptRow, { kind: 'context' }> }) {
+  const text = row.text.length > MAX_CONTEXT_CHARS
+    ? `${row.text.slice(0, MAX_CONTEXT_CHARS)}…`
+    : row.text
+  return (
+    <details className="mx-auto w-full max-w-[85%] rounded-xl border bg-muted/40">
+      <summary className="flex cursor-pointer select-none items-center gap-2 px-4 py-2 text-xs text-muted-foreground">
+        <LibraryBig className="size-3.5 shrink-0" />
+        <span>上下文注入</span>
+        <span className="min-w-0 truncate font-mono">{row.label}</span>
+      </summary>
+      <pre className="max-h-56 overflow-y-auto border-t px-4 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+        {text}
+      </pre>
+    </details>
+  )
+}
+
 function RowView({ row, onForkAt }: { row: TranscriptRow; onForkAt: (seq: number) => void }) {
   switch (row.kind) {
     case 'user':
@@ -117,6 +143,8 @@ function RowView({ row, onForkAt }: { row: TranscriptRow; onForkAt: (seq: number
       return <AssistantMessage row={row} onForkAt={onForkAt} />
     case 'tool':
       return <ToolCard row={row} />
+    case 'context':
+      return <ContextRowView row={row} />
   }
 }
 
