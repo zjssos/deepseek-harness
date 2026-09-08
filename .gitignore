@@ -45,3 +45,4 @@ apps/rxlab-web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+deepseek-harness/
