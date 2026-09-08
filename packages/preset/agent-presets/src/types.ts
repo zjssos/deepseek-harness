@@ -19,8 +19,6 @@ export interface AgentPresetRow {
   readonly name?: string
   /** One sentence on what this preset is for. */
   readonly description?: string
-  /** The base preset this delta composes over, when it declares one. */
-  readonly extends?: string
   /** Why this preset cannot compose a session; absent when it can. */
   readonly broken?: string
 }

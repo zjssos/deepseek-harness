@@ -24,7 +24,6 @@
 import { stat } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
-import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import z from '@deepseek-ai/schemastery'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
@@ -39,15 +38,11 @@ import type SettingsService from '@deepseek-ai/dsh-settings'
 import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
-import {
-  readCompositionDocument, resolveComposition, CompositionError,
-  type PresetComposition,
-} from './composition.ts'
 import { copyComposition, deleteComposition, presetExists, readComposition } from './authoring.ts'
 import { livePresetMounts, mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import {
-  fileComposition, mountedCompositionRows, rowsComposition,
-  type AgentPresetComposition, type AgentPresetCompositionRow,
+  fileComposition, mountedCompositionRows,
+  type AgentPresetComposition,
 } from './composition-inventory.ts'
 import type { AgentPreset, Config, PresetRoot } from './preset.ts'
 import { agentPresetProjectionDefinition } from './session.ts'
@@ -272,7 +267,6 @@ export class AgentPresets extends TypertRemoteService {
         isDefault: preset.id === defaultId,
         ...preset.name === undefined ? {} : { name: preset.name },
         ...preset.description === undefined ? {} : { description: preset.description },
-        ...preset.extends === undefined ? {} : { extends: preset.extends },
         ...preset.broken === undefined ? {} : { broken: preset.broken },
       })),
       authorable: this.authorable,
@@ -328,47 +322,12 @@ export class AgentPresets extends TypertRemoteService {
         found.push({ ...identity, broken: preset.broken, rows: [] })
         continue
       }
-      const read = await this.fileCompositionOf(preset, evaluateExpression)
+      const read = await fileComposition(preset.path, evaluateExpression)
       found.push('broken' in read
         ? { ...identity, broken: read.broken, rows: [] }
         : { ...identity, rows: read.rows })
     }
     return found
-  }
-
-  /**
-   * One unmounted preset's effective composition rows, as its file (composed
-   * over its `extends` chain for a delta) answers on this host.
-   * @param preset - the roster preset to read.
-   * @param evaluateExpression - the Loader-context evaluator for `!!js` nodes.
-   * @returns the flattened rows, or why they cannot be read.
-   */
-  private async fileCompositionOf(
-    preset: AgentPreset,
-    evaluateExpression: (expression: string) => unknown,
-  ): Promise<{ rows: readonly AgentPresetCompositionRow[] } | { broken: string }> {
-    try {
-      if (preset.extends === undefined) {
-        return await fileComposition(preset.path, evaluateExpression)
-      }
-      const composition = await resolveComposition(preset, await this.rosterFinder())
-      const base = await readCompositionDocument(composition.path)
-      // Resolved composition, flattened without mounting; the resolver has
-      // already proven every patch matches, and one flat application against
-      // the base file is the same composition the mount installs.
-      /* v8 ignore next 2 -- resolveComposition always ends its chain at a standalone base */
-      if (base.kind !== 'standalone') throw new CompositionError('the extends chain did not end at a standalone base')
-      const composed = applyEntryPatches(base.rows, [...composition.patches], () => {})
-      return { rows: rowsComposition(composed, evaluateExpression) }
-    } catch (error) {
-      return { broken: error instanceof Error ? error.message : String(error) }
-    }
-  }
-
-  /** A fixed-roster id lookup over one discovery read. */
-  private async rosterFinder(): Promise<(id: string) => Promise<AgentPreset | undefined>> {
-    const byId = new Map((await this.list()).map(preset => [preset.id, preset] as const))
-    return id => Promise.resolve(byId.get(id))
   }
 
   /**
@@ -790,13 +749,12 @@ export class AgentPresets extends TypertRemoteService {
     if (pending !== undefined) {
       const mounted = await pending
       // Files are the only composition editor (authoring is copy/delete), so
-      // the stamps are what notice an edit: a changed file anywhere in the
-      // chain starts the next generation here, for this and later sessions.
-      // An unreadable stamp serves the current generation — a mount must
-      // survive its file disappearing, and failing the session over a stat
-      // would not.
-      const current = await this.compositionStamps(preset)
-      if (current === undefined || sameStamps(mounted.stamp, current)) return mounted
+      // the stamp is what notices an edit: a changed file starts the next
+      // generation here, for this and later sessions. An unreadable stamp
+      // serves the current generation — a mount must survive its file
+      // disappearing, and failing the session over a stat would not.
+      const current = await compositionStamp(preset.path)
+      if (current === undefined || sameStamp(mounted.stamp, current)) return mounted
       // TODO: reclaim the superseded generation once the last agent joined to
       // it is gone. The subtree is not inert — `dsh-skill-filesystem` watches its
       // roots — and the settings-page authoring flow turns "a composition
@@ -812,20 +770,20 @@ export class AgentPresets extends TypertRemoteService {
       const key: ScopeKey = { agentPreset: preset.id }
       const scope = createScope(this.selfCtx, key)
       try {
-        // Stamped before any file is read: an edit racing the mount makes the
-        // stamps stale rather than silently current, so the next session
-        // refreshes instead of trusting a composition older than its stamps.
-        const stamps = await this.compositionStamps(preset)
-        if (stamps === undefined) {
-          const reason = 'composition file is unreadable'
+        // Stamped before the file is read: an edit racing the mount makes the
+        // stamp stale rather than silently current, so the next session
+        // refreshes instead of trusting a composition older than its stamp.
+        const stamp = await compositionStamp(preset.path)
+        if (stamp === undefined) {
+          const reason = `composition file is unreadable: ${preset.path}`
           throw new RemoteError(
             'agent-preset/invalid',
             `agent-presets: preset "${preset.id}" failed to mount: ${reason}`,
             { agentPreset: preset.id, reason },
           )
         }
-        await mountPreset(scope.ctx, preset, await this.compositionOf(preset))
-        return { key, scope, stamp: stamps }
+        await mountPreset(scope.ctx, preset)
+        return { key, scope, stamp }
       } catch (error) {
         this.standing.delete(preset.id)
         await scope.dispose()
@@ -834,39 +792,6 @@ export class AgentPresets extends TypertRemoteService {
     })()
     this.standing.set(preset.id, created)
     return created
-  }
-
-  /**
-   * The roster-resolved composition one preset mounts.
-   * @param preset - the resolved, mountable preset.
-   * @returns the composition, with its chain proven by the resolver.
-   */
-  private async compositionOf(preset: AgentPreset): Promise<PresetComposition> {
-    return await resolveComposition(preset, await this.rosterFinder())
-  }
-
-  /**
-   * Stamps of every composition file in one preset's chain, in chain order.
-   * @param preset - the resolved preset.
-   * @returns the stamps, or undefined when any file cannot be statted.
-   */
-  private async compositionStamps(preset: AgentPreset): Promise<readonly CompositionStamp[] | undefined> {
-    let chain: readonly AgentPreset[]
-    try {
-      chain = (await this.compositionOf(preset)).chain
-    } catch {
-      // The chain resolver re-reads files; a preset whose composition stopped
-      // reading between resolveMountable and here fails at the mount below,
-      // which is where the composition error is the actionable one.
-      return undefined
-    }
-    const stamps: CompositionStamp[] = []
-    for (const member of chain) {
-      const stamp = await compositionStamp(member.path)
-      if (stamp === undefined) return undefined
-      stamps.push(stamp)
-    }
-    return stamps
   }
 }
 
@@ -890,13 +815,9 @@ async function compositionStamp(path: string): Promise<CompositionStamp | undefi
   }
 }
 
-/** Whether two stamp lists name the same file states. */
-function sameStamps(a: readonly CompositionStamp[], b: readonly CompositionStamp[]): boolean {
-  return a.length === b.length && a.every((stamp, index) => {
-    const other = b[index]
-    return other !== undefined
-      && stamp.mtimeMs === other.mtimeMs && stamp.size === other.size
-  })
+/** Whether two stamps name the same file state. */
+function sameStamp(a: CompositionStamp, b: CompositionStamp): boolean {
+  return a.mtimeMs === b.mtimeMs && a.size === b.size
 }
 
 /** One preset's standing composition. */
@@ -905,8 +826,8 @@ interface StandingMount {
   readonly key: ScopeKey
   /** Disposal boundary; held for whole-tree teardown, never per-session. */
   readonly scope: Scope
-  /** Stamps of the composition files this generation was mounted from, in chain order. */
-  readonly stamp: readonly CompositionStamp[]
+  /** Stamp of the composition file this generation was mounted from. */
+  readonly stamp: CompositionStamp
 }
 
 export default AgentPresets

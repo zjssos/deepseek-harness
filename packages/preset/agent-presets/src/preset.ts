@@ -25,11 +25,6 @@ export interface AgentPreset {
   readonly trust: PresetTrust
   /** Absolute path of the preset's agent composition file. */
   readonly path: string
-  /**
-   * The base preset this preset composes over, when its composition is a
-   * delta map (`extends:`); absent for a standalone entry-list composition.
-   */
-  readonly extends?: string
   /** Display name from the preset's own metadata; absent falls back to {@link id}. */
   readonly name?: string
   /** One sentence on what this preset is for, when it published one. */

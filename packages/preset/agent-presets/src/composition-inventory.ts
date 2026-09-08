@@ -148,21 +148,6 @@ function flattenRows(
 }
 
 /**
- * Flatten one already-parsed, shape-checked row list into plugin rows.
- * @param rows - the parsed rows (an entry list, as a mount would start from).
- * @param evaluateExpression - the Loader-context evaluator for `!!js` nodes.
- * @returns flattened rows in composition order.
- */
-export function rowsComposition(
-  rows: readonly unknown[],
-  evaluateExpression: DisabledExpressionEvaluator,
-): AgentPresetCompositionRow[] {
-  const found: AgentPresetCompositionRow[] = []
-  flattenRows(rows, false, evaluateExpression, found)
-  return found
-}
-
-/**
  * Plugin rows of one composition file, for a preset with no live mount.
  *
  * Parsed with the Loader's own dialect ({@link entryListSchema}), so the rows
@@ -187,7 +172,9 @@ export async function fileComposition(
   }
   const problem = entryListProblem(rows)
   if (problem !== undefined) return { broken: problem }
-  return { rows: rowsComposition(rows as readonly unknown[], evaluateExpression) }
+  const found: AgentPresetCompositionRow[] = []
+  flattenRows(rows as readonly unknown[], false, evaluateExpression, found)
+  return { rows: found }
 }
 
 /**
