@@ -18,6 +18,8 @@ The date in the filename is when the topic was **first proposed** (per git histo
 
 The active lifecycle tree is the working inventory: browse its lifecycle/class folders or search the repository. Do not add a centralized `INDEX.md`; the [no-index Agent Note](implemented/process/2026-07-19-remove-generated-agent-note-index.md) owns the rationale. Low-future-value implemented records move to the separate frozen [`archived/`](archived/AGENTS.md) tree described below.
 
+One non-Agent-Note folder sits beside the lifecycle tree: [`rxlab/`](rxlab/AGENTS.md) holds the rxlab product line's working documents and follows its own conventions, not the lifecycle/class structure or bilingual pairing this file defines.
+
 ## Classification
 
 Each Agent Note belongs to one path-encoded class from the closed set in `scripts/agent-note-tree.ts`; the classification gate rejects other folders. Adding a class requires updating the canonical set and this section. See the [classification Agent Note](implemented/process/2026-06-20-agent-note-classification.md).

@@ -18,6 +18,8 @@
 
 活跃生命周期目录树就是工作清单：浏览其生命周期/类别文件夹，或搜索仓库即可。请勿添加集中式 `INDEX.md`；设计理由见[不设索引的 Agent Note](implemented/process/2026-07-19-remove-generated-agent-note-index.zh.md)。未来指导价值较低的已实施记录会移至下文所述、单独冻结的 [`archived/`](archived/AGENTS.md) 目录树。
 
+生命周期目录树旁有一个非 Agent Note 的目录：[`rxlab/`](rxlab/AGENTS.md) 存放 rxlab 产品线的工作文档，遵循其自身的约定，不受本文件定义的生命周期/类别结构与双语配对约束。
+
 <a id="classification"></a>
 
 ## 分类

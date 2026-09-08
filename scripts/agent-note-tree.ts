@@ -21,6 +21,13 @@ export const AGENT_NOTE_CLASSES = ['feature', 'bug-fix', 'simplification', 'arch
 /** Historical implemented notes live outside the active lifecycle tree. */
 const AGENT_NOTE_ARCHIVE = 'archived'
 
+/**
+ * The rxlab product line's own documentation folder (governed by
+ * .agents/notes/rxlab/AGENTS.md). It holds rxlab working documents, not Agent
+ * Notes, so the walk skips it instead of reading it as lifecycle/class files.
+ */
+export const RXLAB_DOC_FOLDER = 'rxlab'
+
 /** Non-Agent Note Markdown allowed to sit directly at a lifecycle root. */
 const ROOT_ALLOWLIST = new Set(['AGENTS.md', 'CLAUDE.md'])
 
@@ -50,8 +57,9 @@ export function walkAgentNoteTree(): { notes: AgentNote[]; errors: string[] } {
     }
     if (entry.isDirectory()
       && entry.name !== AGENT_NOTE_ARCHIVE
+      && entry.name !== RXLAB_DOC_FOLDER
       && !(AGENT_NOTE_LIFECYCLES as readonly string[]).includes(entry.name)) {
-      errors.push(`structure: ${entry.name}/ — unknown lifecycle folder (allowed: ${AGENT_NOTE_LIFECYCLES.join(', ')}, plus ${AGENT_NOTE_ARCHIVE}/)`)
+      errors.push(`structure: ${entry.name}/ — unknown lifecycle folder (allowed: ${AGENT_NOTE_LIFECYCLES.join(', ')}, plus ${AGENT_NOTE_ARCHIVE}/ and ${RXLAB_DOC_FOLDER}/)`)
     }
   }
   for (const lifecycle of AGENT_NOTE_LIFECYCLES) {

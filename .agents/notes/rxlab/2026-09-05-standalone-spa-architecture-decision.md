@@ -1,6 +1,7 @@
 # rxlab：独立 SPA 与 Cordis 客户端栈的架构取舍
 
-> 状态：决策注记（2026-09-05，分支 qoder/rxlab，与「rxlab：与 web 平行的全新 agent profile + 独立 Web 客户端.md」并列）。
+> 状态：决策注记（2026-09-05，分支 qoder/rxlab；rxlab 文档区规则见 [AGENTS.md](AGENTS.md)）。
+>
 > 回答一个问题：rxlab 的 SPA「不走 Cordis 客户端栈、经 /api 访问 host」，是不是破坏了 deepseek-harness「一切皆插件、可配置替换」的框架原则？
 
 ## 结论

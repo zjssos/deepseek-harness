@@ -1,6 +1,6 @@
 # rxlab:组装逻辑与分层架构说明(harness 版)
 
-> 状态:结构化说明(2026-09-07,分支 qoder/rxlab @ 83cbb44c02)。与「rxlab:与 web 平行的全新 agent profile + 独立 Web 客户端.md」(计划)和「rxlab:独立 SPA 的架构取舍注记.md」(决策)并列,仅本地 gitignored。本文描述**已实现**的组装,不是未来设想;文字以仓库当前代码为准,不引用历史实现。
+> 状态:现状说明(2026-09-07,分支 qoder/rxlab @ 83cbb44c02;rxlab 文档区规则见 [AGENTS.md](AGENTS.md))。与[独立 SPA 架构取舍注记](2026-09-05-standalone-spa-architecture-decision.md)(决策)互补。本文描述**已实现**的组装,不是未来设想;文字以仓库当前代码为准,不引用历史实现。
 
 ## 0. 一句话
 
