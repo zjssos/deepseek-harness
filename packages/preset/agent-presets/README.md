@@ -74,6 +74,23 @@ Authoring is copy-only: creating a preset copies an existing preset's whole dire
 
 A copy is refused when the id is not `[a-z0-9][a-z0-9-]*` (the id becomes a directory name), when the id is already taken (a copy never overwrites), or when the source is unknown. Deleting removes only locally authored presets; presets that ship with the deployment are not removable. A session already running on a deleted preset keeps running on it.
 
+### Delta presets (`extends`)
+
+A preset whose composition is a top-level entry list is STANDALONE. A preset whose `agent.cordis.yml` is instead a map carrying `extends: <preset-id>` is a DELTA preset: its `rows` are runtime patches with the same semantics the profile layer applies to a `cordis.patch.yml` — an `id` row overrides that entry's fields (the whole `config` replaced, not merged), and an `insert` row appends new entries. Inheritance is single, and a delta may extend another delta; the chain composes deepest-first onto the deepest standalone base.
+
+```yaml
+extends: standard
+rows:
+  - id: tool-web
+    name: '@deepseek-ai/dsh-tool-web'
+    disabled: true
+  - insert:
+      - id: my-tool
+        name: '@deepseek-ai/dsh-my-tool'
+```
+
+The roster composes the chain before any mount: a delta naming a missing base, a cycle, or a patch that matches nothing is a broken roster row at discovery, never a failed first session. A composed mount reads the base preset's entry-list file and applies the flattened patch list to it; the rows resolve preset-relative specifiers and `!!js` `baseUrl` against the SELECTED preset's own directory, so a delta's own files travel with it. A base composition that names preset-relative files cannot be extended (its rows would resolve from the extending preset's directory); shipped bases name installed packages only.
+
 ### Switching a session's preset
 
 A session can switch to a different preset only while it has produced nothing — no messages or tool calls. After that, the composition is fixed for the session's life, because swapping tools mid-conversation would leave logged tool calls the new composition cannot make. A committed switch emits `tools/change` because the resolved tool set changed without a registry edit. The switch is also recorded in the session log, so a resumed or forked session rebuilds under the composition it ran.
@@ -105,6 +122,7 @@ This section explains the design behind the roster and the standing mount; obser
 |---|---|
 | [`src/index.ts`](src/index.ts) | Service entry: `Config` schema, settings namespace, roster API, standing-mount coordination |
 | [`src/discovery.ts`](src/discovery.ts) | Filesystem discovery: root scanning, health checks, id validation, ordering |
+| [`src/composition.ts`](src/composition.ts) | Composition documents (standalone/delta) and `extends` chain resolution with fail-loud patch coverage |
 | [`src/composition-inventory.ts`](src/composition-inventory.ts) | Flattened composition rows for plugin-listing surfaces: file reads with evaluated disabled gates, mount reads with fiber states |
 | [`src/preset.ts`](src/preset.ts) | Vocabulary: preset id rule, `AgentPreset` and `PresetRoot`, error types |
 | [`src/mount.ts`](src/mount.ts) | Subtree mounting, host base-URL handling, mount audit, `write()` suppression |

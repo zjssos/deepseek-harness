@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import Include, { applyEntryPatches, entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -76,12 +76,26 @@ function findEntry(entries: unknown[], id: string): ShippedEntry | undefined {
   return undefined
 }
 
-/** Read and validate one shipped preset's Cordis entry list. */
+/**
+ * Read one shipped preset's composition as the roster composes it: a delta
+ * preset answers with its base's entries plus its own patch rows applied, so
+ * these assertions judge what a session actually runs rather than the file.
+ */
 async function shippedEntries(id: string): Promise<unknown[]> {
   const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
-  const entries: unknown = yaml.load(source, { schema: entryListSchema })
-  if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
-  return entries.map((entry: unknown) => entry)
+  const document: unknown = yaml.load(source, { schema: entryListSchema })
+  if (Array.isArray(document)) return document.map((entry: unknown) => entry)
+  if (typeof document !== 'object' || document === null) {
+    throw new TypeError(`${id} preset must contain a Cordis composition document`)
+  }
+  const { extends: baseId, rows } = document as { extends?: string; rows?: unknown[] }
+  if (typeof baseId !== 'string') throw new TypeError(`${id} preset must declare its base`)
+  const base = await shippedEntries(baseId)
+  return applyEntryPatches(
+    base as Parameters<typeof applyEntryPatches>[0],
+    (rows ?? []) as Parameters<typeof applyEntryPatches>[1],
+    () => {},
+  )
 }
 
 describe('the shipped preset root', () => {

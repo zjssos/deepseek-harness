@@ -22,13 +22,15 @@
  */
 
 import { existsSync } from 'node:fs'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, stat } from 'node:fs/promises'
 import { isBuiltin } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { load } from 'js-yaml'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
+import {
+  readCompositionDocument, resolveComposition, entryListProblem,
+  type CompositionDocument,
+} from './composition.ts'
 import { readPresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
 import { classifyRowSpecifier, type RowSpecifier } from './specifier.ts'
@@ -59,43 +61,7 @@ export const USER_PRESET_DIR = '.agent-presets'
  */
 export const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../presets/', import.meta.url))
 
-/**
- * Why `rows` cannot be an entry list, or undefined when it can.
- *
- * A shallow shape check, deliberately short of the loader's work: it does not
- * resolve plugin names or apply configs. What it catches is the hand-edit
- * that produces a file the loader cannot even begin with — and it must accept
- * everything the loader accepts, which is why rows are only required to be
- * maps carrying a plugin `name` (groups recurse into their own lists).
- *
- * Shared with the composition inventory, whose file reads race edits against
- * the health verdict and must judge the raced content by the same rule.
- * @param rows - the parsed composition document.
- * @param at - row-path prefix for nested diagnostics, empty at the top level.
- * @returns one human-readable reason, or undefined when the shape holds.
- */
-export function entryListProblem(rows: unknown, at = ''): string | undefined {
-  if (!Array.isArray(rows)) {
-    return at === ''
-      ? 'the composition must be a top-level list of plugin rows'
-      : `group ${at} must hold a list of plugin rows`
-  }
-  for (const [index, row] of rows.entries()) {
-    const label = at === '' ? `row ${String(index + 1)}` : `${at} row ${String(index + 1)}`
-    if (typeof row !== 'object' || row === null || Array.isArray(row)) {
-      return `${label} is not a plugin row (expected a map with a "name")`
-    }
-    const { name, group, config } = row as { name?: unknown; group?: unknown; config?: unknown }
-    if (typeof name !== 'string' || name === '') {
-      return `${label} names no plugin (a "name" string is required)`
-    }
-    if (group === true) {
-      const nested = entryListProblem(config, label)
-      if (nested !== undefined) return nested
-    }
-  }
-  return undefined
-}
+export { entryListProblem } from './composition.ts'
 
 /**
  * Whether a package name is installed anywhere above `base`.
@@ -214,46 +180,62 @@ async function unresolvableRows(
 }
 
 /**
+ * One preset's own-file health verdict, judged without the rest of the roster.
+ */
+interface CompositionVerdict {
+  /** The base id a delta document declares; absent for a standalone list. */
+  readonly extends?: string
+  /** Why this file cannot mount, or undefined when it looks loadable. */
+  readonly broken?: string
+}
+
+/**
  * Why the composition at `path` cannot mount, or undefined when it looks
  * loadable. Parsed with the loader's own YAML dialect ({@link entryListSchema},
  * the one carrying `!!js`), so health can never call a composition broken
  * that the loader would accept.
+ *
+ * Both document shapes are judged here by their own rules; the `extends`
+ * chain itself is judged against the roster in {@link discoverPresets}, which
+ * sees every candidate base.
  * @param path - absolute path of the composition file.
  * @param harnessBase - base URL a row's package name resolves against.
- * @returns one human-readable reason, or undefined when the file is loadable.
+ * @returns the file's own verdict.
  */
-async function compositionProblem(path: string, harnessBase: string): Promise<string | undefined> {
-  let content: string
+async function compositionVerdict(path: string, harnessBase: string): Promise<CompositionVerdict> {
+  let document: CompositionDocument
   try {
-    content = await readFile(path, 'utf8')
-  } catch {
-    // The caller statted this file moments ago; any read failure now —
-    // deleted in between, permissions — is the same answer as unparsable.
-    return `the composition file ${COMPOSITION_FILE} cannot be read`
-  }
-  let rows: unknown
-  try {
-    rows = load(content, { schema: entryListSchema })
+    // Shape only; a broken chain is the roster's verdict, not this file's.
+    document = await readCompositionDocument(path)
   } catch (error) {
-    /* v8 ignore next -- js-yaml throws YAMLException (an Error) for every parse failure; the fallback keeps a hostile value readable */
-    const full = error instanceof Error ? error.message : String(error)
-    // First line only: js-yaml appends a multi-line code-frame snippet, and
-    // the reason is displayed on a roster card, not in a terminal.
-    return `the composition is not valid YAML: ${full.replace(/\n[\s\S]*$/, '')}`
+    const reason = error instanceof Error ? error.message : String(error)
+    // The reason is displayed on a roster card, not in a terminal: js-yaml
+    // appends a multi-line code-frame snippet, and a read failure is a
+    // filesystem fact whose error code says nothing a reader needs.
+    return {
+      broken: reason
+        .replace(/^the composition is not valid YAML: [\s\S]*$/u, whole => whole.replace(/\n[\s\S]*$/, ''))
+        .replace(/^the composition file cannot be read: .*$/u, `the composition file ${COMPOSITION_FILE} cannot be read`),
+    }
   }
-  const shape = entryListProblem(rows)
-  if (shape !== undefined) return shape
-  // The composition's own directory, exactly as `Include` derives it, so a
-  // row naming a file the preset ships resolves the way the mount will.
-  const presetBase = new URL('.', pathToFileURL(path)).href
-  const unresolvable = await unresolvableRows(rows as readonly unknown[], presetBase, harnessBase)
-  const [first] = unresolvable
-  if (first === undefined) return undefined
-  if (unresolvable.length === 1) {
-    return `${first.label} names a plugin that cannot be resolved: ${first.name}`
+  if (document.kind === 'standalone') {
+    const shape = entryListProblem(document.rows)
+    if (shape !== undefined) return { broken: shape }
+    // The composition's own directory, exactly as `Include` derives it, so a
+    // row naming a file the preset ships resolves the way the mount will.
+    const presetBase = new URL('.', pathToFileURL(path)).href
+    const unresolvable = await unresolvableRows(document.rows, presetBase, harnessBase)
+    const [first] = unresolvable
+    if (first === undefined) return {}
+    if (unresolvable.length === 1) {
+      return { broken: `${first.label} names a plugin that cannot be resolved: ${first.name}` }
+    }
+    return { broken: `${String(unresolvable.length)} rows name plugins that cannot be resolved:\n`
+      + unresolvable.map(row => `- ${row.label}: ${row.name}`).join('\n') }
   }
-  return `${String(unresolvable.length)} rows name plugins that cannot be resolved:\n`
-    + unresolvable.map(row => `- ${row.label}: ${row.name}`).join('\n')
+  // A delta file's own rows are patches: they import nothing themselves, and
+  // their targets are judged against the whole chain by the roster read.
+  return { extends: document.baseId }
 }
 
 /**
@@ -303,15 +285,16 @@ export async function scanRoot(root: PresetRoot, harnessBase: string): Promise<A
     if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue
     const directory = join(dir, child.name)
     const path = join(directory, COMPOSITION_FILE)
-    const broken = await isFile(path)
-      ? await compositionProblem(path, harnessBase)
-      : `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file`
+    const verdict = await isFile(path)
+      ? await compositionVerdict(path, harnessBase)
+      : { broken: `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file` }
     // Display text only, and never fatal: a preset with unreadable metadata
     // still mounts, it just shows its id.
     const metadata = await readPresetMetadata(directory)
     found.push({
       id: child.name, trust: root.trust, path, ...metadata,
-      ...broken === undefined ? {} : { broken },
+      ...verdict.extends === undefined ? {} : { extends: verdict.extends },
+      ...verdict.broken === undefined ? {} : { broken: verdict.broken },
     })
   }
   // Declared order first so the shipped set reads by capability; everything
@@ -323,7 +306,10 @@ export async function scanRoot(root: PresetRoot, harnessBase: string): Promise<A
 }
 
 /**
- * Scan every root in precedence order.
+ * Scan every root in precedence order, then judge every delta preset's
+ * `extends` chain against the completed roster — the earliest point the whole
+ * answer is resolvable, so a delta naming a missing base, a cycle, or a
+ * patch that matches nothing is a broken roster row, not a failed session.
  * @param roots - roots in precedence order; an earlier root wins a duplicate id.
  * @param harnessBase - base URL a row's package name resolves against.
  * @returns every discovered preset, first-root-wins per id.
@@ -337,6 +323,19 @@ export async function discoverPresets(
     for (const preset of await scanRoot(root, harnessBase)) {
       if (byId.has(preset.id)) continue
       byId.set(preset.id, preset)
+    }
+  }
+  for (const preset of byId.values()) {
+    if (preset.extends === undefined || preset.broken !== undefined) continue
+    const finder: (id: string) => Promise<AgentPreset | undefined> =
+      id => Promise.resolve(byId.get(id))
+    try {
+      await resolveComposition(preset, finder)
+    } catch (error) {
+      byId.set(preset.id, {
+        ...preset,
+        broken: error instanceof Error ? error.message : String(error),
+      })
     }
   }
   return [...byId.values()]

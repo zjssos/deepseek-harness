@@ -20,6 +20,7 @@ import { Include } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryTree } from '@deepseek-ai/cordis-plugin-loader'
 import { scopeOf, scopeParentOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { PresetComposition } from './composition.ts'
 import type { AgentPreset } from './preset.ts'
 import { classifyRowSpecifier } from './specifier.ts'
 
@@ -52,11 +53,23 @@ const mounted = new WeakMap<object, MountedTree>()
 const harnessBase = new WeakMap<object, string>()
 
 /**
+ * The mount's include config, plus the one field this package adds: where the
+ * composition's rows resolve relative specifiers and `!!js` `baseUrl` from.
+ * The extra field rides the config object unchanged through the include and
+ * the loader interpolation (the config is entry and patch lists by the
+ * tree-carrier marker), so no vendored surface learns about it.
+ */
+interface PresetMountConfig extends Include.Config {
+  /** When set, the subtree's `ctx.baseUrl` after construction — a delta preset's own directory. */
+  baseUrlOverride?: string
+}
+
+/**
  * Include subclass that publishes its tree and fiber for the audit, and never
  * writes to the file it read.
  */
 class PresetTree extends Include {
-  constructor(ctx: Context, config: Include.Config) {
+  constructor(ctx: Context, config: PresetMountConfig) {
     super(ctx, config)
     // EntryTree's constructor files every new tree under the nearest owning
     // Loader entry's `subtree` slot — here the roster's own row, because the
@@ -66,6 +79,12 @@ class PresetTree extends Include {
     // not being a Loader entry. Reclaim the slot.
     const owner = this.ctx.fiber.entry
     if (owner?.subtree === this) delete owner.subtree
+    // A composed mount reads the BASE preset's file; the rows that run — base
+    // and delta alike — must resolve preset-relative specifiers and `!!js`
+    // `baseUrl` from the preset the caller SELECTED, which is where its own
+    // files travel. Re-pointed before any row activates: rows evaluate their
+    // expressions in contexts derived from this one.
+    if (config.baseUrlOverride !== undefined) this.ctx.baseUrl = config.baseUrlOverride
     mounted.set(config, { tree: this, fiber: ctx.fiber })
   }
 
@@ -366,16 +385,24 @@ function mountDetail(error: unknown): string {
 }
 
 /**
- * Mount `preset` under `agentCtx` and return only once every row is usable.
+ * Mount `preset`'s composition under `agentCtx` and return only once every
+ * row is usable.
  *
  * The subtree is owned by `agentCtx`'s fiber, so it unwinds with the agent and
  * the caller receives no disposer. A rejection leaves nothing mounted.
  * @param agentCtx - the agent's scope context, from the agent factory's `setup`.
  * @param preset - the resolved preset to compose the agent from.
+ * @param composition - what the roster resolved for this preset; absent
+ * mounts the preset's own file as a standalone composition.
  * @throws when `agentCtx` carries no scope, a row is unusable, or a row
  * published a service into the root realm.
  */
-export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promise<void> {
+export async function mountPreset(
+  agentCtx: Context,
+  preset: AgentPreset,
+  composition?: PresetComposition,
+): Promise<void> {
+  const resolved = composition ?? { path: preset.path, patches: [], chain: [preset] }
   const scope = scopeOf(agentCtx)
   if (scope === undefined) {
     throw new Error(
@@ -383,7 +410,13 @@ export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promi
       + 'its registrations would apply to every agent in the process',
     )
   }
-  const config: Include.Config = { path: pathToFileURL(preset.path).href }
+  const config: PresetMountConfig = {
+    path: pathToFileURL(resolved.path).href,
+    ...resolved.patches.length > 0 ? { patches: [...resolved.patches] } : {},
+  }
+  // A composed mount reads the base preset's file; the selected preset's own
+  // directory is where its rows resolve preset-relative specifiers from.
+  if (resolved.path !== preset.path) config.baseUrlOverride = new URL('.', pathToFileURL(preset.path)).href
   // Captured before the subtree exists: the standing scope context still
   // carries the host composition's base, which is inside the installed
   // harness and is therefore where a row's package name has to resolve from.
@@ -422,7 +455,7 @@ export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promi
       // Swallows only this subtree's teardown failure. The mount error below is
       // the actionable one, and the discarded fiber is unreachable either way.
     }
-    const reason = `${mountDetail(error)} (${preset.path})`
+    const reason = `${mountDetail(error)} (${resolved.path === preset.path ? preset.path : `${resolved.path} patched by ${preset.path}`})`
     throw new RemoteError(
       'agent-preset/invalid',
       `agent-presets: preset "${preset.id}" failed to mount: ${reason}`,
