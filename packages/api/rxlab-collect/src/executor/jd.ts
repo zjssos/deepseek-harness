@@ -1,7 +1,8 @@
 /**
  * JD deterministic collector: anonymous headless capture of one item.m.jd.com
  * product page — title, selected variant, share-produced purchase link — plus
- * a desktop-page price read. Ported from the rxlab collect feasibility probe
+ * a desktop-page price read, spec-parameter pairs, and a mobile-page
+ * price/main-image fallback. Ported from the rxlab collect feasibility probe
  * (see the gpw/probes evidence in the module Agent Note); the share/copy flow
  * is the mechanism the merchant uses to obtain a buyable link.
  * @module @deepseek-ai/dsh-rxlab-collect/src/executor/jd
@@ -19,6 +20,12 @@ const DESKTOP_UA =
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
+/** One spec-parameter name/value pair as the capture stores it. */
+interface JdParamPair {
+  name: string
+  value: string
+}
+
 /** Leaf element with exactly one visible text; mirrors the probe's finder. */
 async function clickLeaf(page: import('playwright').Page, text: string): Promise<boolean> {
   const locator = page.getByText(text, { exact: true }).first()
@@ -32,23 +39,52 @@ async function clickLeaf(page: import('playwright').Page, text: string): Promise
 }
 
 /** The page title minus JD's decoration, or null when the page is a gate. */
-async function readJdState(page: import('playwright').Page): Promise<{ title: string; selectedSku?: string; gate: boolean }> {
+async function readJdState(page: import('playwright').Page): Promise<{
+  title: string
+  selectedSku?: string
+  mobilePrice?: string
+  mainImageUrl?: string
+  gate: boolean
+}> {
   const state = await page.evaluate(() => {
-    const head = document.body.innerText.slice(0, 800)
+    const body = document.body
+    const head = body.innerText.slice(0, 800)
     const gate = /请登录|扫码登录|验证|访问频繁/.test(head)
-    const selectedMatch = document.body.innerText.match(/已选\s*(.*?)(?:，|$)/)
-    return { gate, selected: selectedMatch?.[1]?.trim() ?? '' }
+    const selectedMatch = body.innerText.match(/已选\s*(.*?)(?:，|$)/)
+    const priceMatch = body.innerText.match(/¥\s*\d+(?:\.\d+)?/)
+    const mainImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content') ?? ''
+    return {
+      gate,
+      selected: selectedMatch?.[1]?.trim() ?? '',
+      price: priceMatch?.[0].replace(/\s/g, '') ?? '',
+      mainImage,
+    }
   })
   const title = cleanJdTitle(await page.title())
   return {
     title,
     ...(state.selected === '' ? {} : { selectedSku: state.selected.slice(0, 300) }),
+    ...(state.price === '' ? {} : { mobilePrice: state.price }),
+    ...(state.mainImage === '' || !/^https?:\/\//.test(state.mainImage)
+      ? {}
+      : { mainImageUrl: state.mainImage.slice(0, 2000) }),
     gate: state.gate,
   }
 }
 
-/** Desktop page's first displayed ¥ price; raw text kept for the record. */
-async function readJdPrice(browser: Browser, url: string): Promise<CollectPrice> {
+/** The numeric value of a JD price text, or undefined when unparseable. */
+function priceFrom(raw: string, note: string): CollectPrice | undefined {
+  const value = Number(raw.replace(/[^\d.]/g, ''))
+  if (!Number.isFinite(value)) return undefined
+  return { value, raw, note }
+}
+
+/**
+ * Desktop page read: the first displayed ¥ price plus the spec-parameter
+ * table (品牌/材质/尺寸...), both absent when the anonymous session hits a
+ * risk page instead of the product page.
+ */
+async function readJdDesktop(browser: Browser, url: string): Promise<{ price?: CollectPrice; params?: JdParamPair[] }> {
   const context = await browser.newContext({ userAgent: DESKTOP_UA, locale: 'zh-CN', viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   try {
@@ -56,12 +92,29 @@ async function readJdPrice(browser: Browser, url: string): Promise<CollectPrice>
     await wait(2400)
     const raw = await page.evaluate(() => {
       const match = document.body.innerText.match(/¥\s*\d+(?:\.\d+)?/)
-      return match ? match[0].replace(/\s/g, '') : ''
+      const pairs: { name: string; value: string }[] = []
+      const push = (text: string | null | undefined): void => {
+        const normalized = (text ?? '').replace(/\s+/g, ' ').trim()
+        const split = normalized.split(/[:：]/)
+        if (split.length < 2) return
+        const name = split[0]?.trim() ?? ''
+        const value = split.slice(1).join('：').trim()
+        if (name === '' || value === '' || name.length > 50) return
+        pairs.push({ name: name.slice(0, 100), value: value.slice(0, 300) })
+      }
+      for (const li of document.querySelectorAll('.parameter li, .p-parameter li, .item-parameter li')) {
+        push(li.textContent)
+      }
+      for (const row of document.querySelectorAll('.spec-table tr, .parameter-table tr')) {
+        push([...row.querySelectorAll('th,td')].map(cell => cell.textContent).join('：'))
+      }
+      return { price: match ? match[0].replace(/\s/g, '') : '', params: pairs.slice(0, 60) }
     })
-    if (raw === '') throw new Error('JD 桌面页未显示价格')
-    const value = Number(raw.replace(/[^\d.]/g, ''))
-    if (!Number.isFinite(value)) throw new Error(`价格文本无法解析: ${raw}`)
-    return { value, raw, note: '页面显示价(可能为活动价)' }
+    const desktopPrice = priceFrom(raw.price, '页面显示价(可能为活动价)')
+    return {
+      ...(desktopPrice === undefined ? {} : { price: desktopPrice }),
+      ...(raw.params.length === 0 ? {} : { params: raw.params }),
+    }
   } finally {
     await context.close().catch(() => undefined)
   }
@@ -99,15 +152,18 @@ export function createJdCollector(browser: () => Promise<Browser>): Collector {
             buyUrl = (await page.evaluate(() => String(document.getSelection() ?? '').trim())) || undefined
           }
         }
-        // Price is best-effort: JD serves an anonymous headless desktop session
-        // a risk page without price text under some networks, so the field is
-        // omitted instead of failing the whole capture.
-        let price: CollectPrice | undefined
+        // Desktop read is best-effort: JD serves an anonymous headless session
+        // a risk page without price or parameter text under some networks, so
+        // both fields fall back to the mobile page's own price and stay absent
+        // rather than failing the whole capture.
+        let desktop: { price?: CollectPrice; params?: JdParamPair[] } = {}
         try {
-          price = await readJdPrice(shared, jdDesktopUrl(sku))
+          desktop = await readJdDesktop(shared, jdDesktopUrl(sku))
         } catch {
-          price = undefined
+          desktop = {}
         }
+        const price = desktop.price
+          ?? (state.mobilePrice === undefined ? undefined : priceFrom(state.mobilePrice, '移动端页面显示价(可能为活动价)'))
         return {
           httpOk,
           fields: {
@@ -115,6 +171,8 @@ export function createJdCollector(browser: () => Promise<Browser>): Collector {
             ...(price === undefined ? {} : { price }),
             ...(state.selectedSku === undefined ? {} : { selectedSku: state.selectedSku }),
             ...(buyUrl === undefined ? {} : { buyUrl: buyUrl.slice(0, 2000) }),
+            ...(state.mainImageUrl === undefined ? {} : { mainImageUrl: state.mainImageUrl }),
+            ...(desktop.params === undefined ? {} : { params: desktop.params }),
           },
         }
       } finally {

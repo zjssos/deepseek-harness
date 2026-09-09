@@ -18,6 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
@@ -31,7 +32,16 @@ import type { ModulePanelProps } from '@/modules/types'
 import type {
   CatalogItemId,
   CatalogItemSummary,
+  CollectPlatform,
+  FrameMaterial,
+  FrameShape,
+  FrameStyle,
+  FrameType,
+  Gender,
+  LensDesign,
+  LensFunction,
   LensType,
+  NosePad,
   RefractiveIndex,
   WikiItem,
   WikiItemDraft,
@@ -58,35 +68,123 @@ const LENS_TYPE_LABELS: Record<LensType, string> = {
   other: '其他',
 }
 
-const REFRACTIVE_INDEXES: readonly RefractiveIndex[] = ['1.56', '1.60', '1.67', '1.74']
+const REFRACTIVE_INDEXES: readonly RefractiveIndex[] = ['1.50', '1.56', '1.59', '1.60', '1.61', '1.67', '1.71', '1.74']
 
 const LENS_TYPES = Object.keys(LENS_TYPE_LABELS) as LensType[]
+
+const FRAME_MATERIAL_LABELS: Record<FrameMaterial, string> = {
+  'pure-titanium': '纯钛',
+  'beta-titanium': 'β钛',
+  titanium: '钛',
+  'metal-alloy': '金属合金',
+  'stainless-steel': '不锈钢',
+  tr90: 'TR90',
+  'plastic-steel': '塑钢',
+  acetate: '板材',
+  pc: 'PC',
+  other: '其他',
+}
+
+const FRAME_TYPE_LABELS: Record<FrameType, string> = {
+  'full-rim': '全框',
+  'semi-rimless': '半框',
+  rimless: '无框',
+}
+
+const FRAME_SHAPE_LABELS: Record<FrameShape, string> = {
+  square: '方框',
+  round: '圆框',
+  oval: '椭圆',
+  'square-round': '方圆形',
+  'cat-eye': '猫眼',
+  pilot: '飞行员',
+  browline: '眉毛框',
+  polygon: '多边形',
+  other: '其他',
+}
+
+const FRAME_STYLE_LABELS: Record<FrameStyle, string> = {
+  business: '商务',
+  retro: '复古',
+  casual: '休闲',
+  fashion: '时尚',
+  sport: '运动',
+  other: '其他',
+}
+
+const GENDER_LABELS: Record<Gender, string> = {
+  male: '男款',
+  female: '女款',
+  unisex: '男女款',
+}
+
+const NOSE_PAD_LABELS: Record<NosePad, string> = {
+  separate: '独立鼻托',
+  integrated: '一体鼻托',
+}
+
+const LENS_DESIGN_LABELS: Record<LensDesign, string> = {
+  spherical: '球面',
+  aspheric: '非球面',
+  'double-aspheric': '双面非球面',
+}
+
+const LENS_FUNCTION_LABELS: Record<LensFunction, string> = {
+  'blue-light': '防蓝光',
+  photochromic: '变色',
+  polarized: '偏光',
+  tinted: '染色',
+  driving: '驾驶',
+}
+
+const PLATFORM_LABELS: Record<CollectPlatform, string> = {
+  jd: '京东',
+  taobao: '淘宝',
+  '1688': '1688',
+  manual: '手工',
+}
+
+/** The Select/checks option values of one label map, in declaration order. */
+function optionsOf(labels: Record<string, string>): string[] {
+  return Object.keys(labels)
+}
 
 /** One editable field in the catalog form. */
 interface FieldSpec {
   readonly key: string
   readonly label: string
-  readonly type: 'text' | 'number' | 'select' | 'textarea'
-  /** Select renders these option values verbatim (labels live beside the spec). */
+  readonly type: 'text' | 'number' | 'select' | 'textarea' | 'checks'
+  /** Select/checks render these option values verbatim unless `labels` maps them. */
   readonly options?: readonly string[]
+  /** Option value → zh display label for select/checks fields. */
+  readonly labels?: Record<string, string>
   readonly required?: boolean
   readonly placeholder?: string
 }
 
 const FRAME_FIELDS: readonly FieldSpec[] = [
-  { key: 'frameMaterial', label: '镜架材质', type: 'text', required: true, placeholder: '如 钛 / 板材 / 金属' },
+  { key: 'material', label: '镜架材质', type: 'select', options: optionsOf(FRAME_MATERIAL_LABELS), labels: FRAME_MATERIAL_LABELS, required: true },
+  { key: 'frameType', label: '框型', type: 'select', options: optionsOf(FRAME_TYPE_LABELS), labels: FRAME_TYPE_LABELS },
+  { key: 'frameShape', label: '形状', type: 'select', options: optionsOf(FRAME_SHAPE_LABELS), labels: FRAME_SHAPE_LABELS },
+  { key: 'style', label: '风格', type: 'select', options: optionsOf(FRAME_STYLE_LABELS), labels: FRAME_STYLE_LABELS },
+  { key: 'gender', label: '适用性别', type: 'select', options: optionsOf(GENDER_LABELS), labels: GENDER_LABELS },
+  { key: 'nosePad', label: '鼻托', type: 'select', options: optionsOf(NOSE_PAD_LABELS), labels: NOSE_PAD_LABELS },
   { key: 'lensWidth', label: '镜片宽 (mm)', type: 'number' },
   { key: 'lensHeight', label: '镜片高 (mm)', type: 'number' },
   { key: 'bridgeWidth', label: '鼻梁距 (mm)', type: 'number' },
   { key: 'templeLength', label: '镜腿长 (mm)', type: 'number' },
+  { key: 'totalWidth', label: '总宽 (mm)', type: 'number' },
   { key: 'weightG', label: '重量 (g)', type: 'number' },
   { key: 'color', label: '颜色', type: 'text' },
 ]
 
 const LENS_FIELDS: readonly FieldSpec[] = [
   { key: 'refractiveIndex', label: '折射率', type: 'select', options: REFRACTIVE_INDEXES, required: true },
-  { key: 'lensType', label: '镜片类型', type: 'select', options: LENS_TYPES, required: true },
+  { key: 'lensType', label: '镜片类型', type: 'select', options: LENS_TYPES, labels: LENS_TYPE_LABELS, required: true },
+  { key: 'lensDesign', label: '镜片设计', type: 'select', options: optionsOf(LENS_DESIGN_LABELS), labels: LENS_DESIGN_LABELS },
+  { key: 'lensFunctions', label: '镜片功能', type: 'checks', options: optionsOf(LENS_FUNCTION_LABELS), labels: LENS_FUNCTION_LABELS },
   { key: 'abbe', label: '阿贝数', type: 'number' },
+  { key: 'diameterMm', label: '直径 (mm)', type: 'number' },
   { key: 'coating', label: '镀膜', type: 'text', placeholder: '如 减反 / 加硬 / 防污' },
   { key: 'sphereRange', label: '光度范围', type: 'text', placeholder: '如 -8.00 ~ +6.00' },
 ]
@@ -112,6 +210,10 @@ function formatTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function formatPrice(price: number): string {
+  return `¥${String(price)}`
 }
 
 function BootSkeleton() {
@@ -430,6 +532,7 @@ function CatalogRow({
         <span className="font-medium">{row.name}</span>
         {identity.length > 0 ? <span className="ml-1.5 text-muted-foreground">{identity}</span> : null}
       </span>
+      {row.price !== undefined ? <span className="shrink-0 text-xs font-medium">{formatPrice(row.price)}</span> : null}
       <span className="shrink-0 text-[10px] text-muted-foreground">{formatTime(row.updatedAt)}</span>
     </button>
   )
@@ -446,18 +549,36 @@ function ItemDetail({ item }: { readonly item: WikiItem }) {
   ]
   switch (item.kind) {
     case 'frame':
-      rows.push({ label: '镜架材质', value: item.frameMaterial })
+      if (item.material !== undefined) {
+        rows.push({ label: '镜架材质', value: FRAME_MATERIAL_LABELS[item.material] })
+      } else {
+        pushTextRows(rows, '镜架材质', item.frameMaterial)
+      }
+      pushMappedRow(rows, '框型', item.frameType, FRAME_TYPE_LABELS)
+      pushMappedRow(rows, '形状', item.frameShape, FRAME_SHAPE_LABELS)
+      pushMappedRow(rows, '风格', item.style, FRAME_STYLE_LABELS)
+      pushMappedRow(rows, '适用性别', item.gender, GENDER_LABELS)
+      pushMappedRow(rows, '鼻托', item.nosePad, NOSE_PAD_LABELS)
       pushNumberRows(rows, '镜片宽', item.lensWidth, 'mm')
       pushNumberRows(rows, '镜片高', item.lensHeight, 'mm')
       pushNumberRows(rows, '鼻梁距', item.bridgeWidth, 'mm')
       pushNumberRows(rows, '镜腿长', item.templeLength, 'mm')
+      pushNumberRows(rows, '总宽', item.totalWidth, 'mm')
       pushNumberRows(rows, '重量', item.weightG, 'g')
       pushTextRows(rows, '颜色', item.color)
       break
     case 'lens':
       rows.push({ label: '折射率', value: item.refractiveIndex })
       rows.push({ label: '镜片类型', value: LENS_TYPE_LABELS[item.lensType] })
+      pushMappedRow(rows, '镜片设计', item.lensDesign, LENS_DESIGN_LABELS)
+      if (item.lensFunctions !== undefined && item.lensFunctions.length > 0) {
+        rows.push({
+          label: '镜片功能',
+          value: item.lensFunctions.map(fn => LENS_FUNCTION_LABELS[fn]).join(' / '),
+        })
+      }
       pushNumberRows(rows, '阿贝数', item.abbe)
+      pushNumberRows(rows, '直径', item.diameterMm, 'mm')
       pushTextRows(rows, '镀膜', item.coating)
       pushTextRows(rows, '光度范围', item.sphereRange)
       break
@@ -473,6 +594,8 @@ function ItemDetail({ item }: { readonly item: WikiItem }) {
   pushTextRows(rows, '来源页', item.rawUrl)
   pushTextRows(rows, '备注', item.notes)
 
+  const priceEntries = [...(item.priceHistory ?? [])].reverse()
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -487,12 +610,54 @@ function ItemDetail({ item }: { readonly item: WikiItem }) {
           </div>
         ))}
       </dl>
+      {priceEntries.length > 0 ? (
+        <div className="space-y-1 border-t pt-2">
+          <div className="text-xs font-medium text-muted-foreground">价格记录</div>
+          {priceEntries.map((entry, index) => (
+            <div
+              key={`${entry.capturedAt}-${String(entry.value)}`}
+              className={index === 0
+                ? 'flex items-center justify-between gap-2 rounded-md bg-accent/60 px-2 py-1 text-xs'
+                : 'flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted-foreground'}
+            >
+              <span className={index === 0 ? 'font-medium' : ''}>{formatPrice(entry.value)}</span>
+              <span>{ORIGIN_LABELS[entry.source]}{entry.note === undefined ? '' : ` · ${entry.note}`}</span>
+              <span className="shrink-0">{formatTime(entry.capturedAt)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {item.source !== undefined ? (
+        <div className="space-y-1 border-t pt-2">
+          <div className="text-xs font-medium text-muted-foreground">来源</div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant="outline">{PLATFORM_LABELS[item.source.platform]}</Badge>
+            {item.source.shopName !== undefined ? <span>{item.source.shopName}</span> : null}
+            {item.source.sku !== undefined
+              ? <span className="font-mono text-muted-foreground">SKU {item.source.sku}</span>
+              : null}
+          </div>
+          <a className="block truncate text-xs text-primary underline" href={item.source.url} target="_blank" rel="noreferrer">
+            {item.source.url}
+          </a>
+        </div>
+      ) : null}
     </div>
   )
 }
 
 function pushTextRows(rows: Array<{ label: string; value: string }>, label: string, value: string | undefined): void {
   if (value !== undefined && value.length > 0) rows.push({ label, value })
+}
+
+/** Push one labeled row for an enum value, rendered through its label map. */
+function pushMappedRow<T extends string>(
+  rows: Array<{ label: string; value: string }>,
+  label: string,
+  value: T | undefined,
+  labels: Record<T, string>,
+): void {
+  if (value !== undefined) rows.push({ label, value: labels[value] })
 }
 
 function pushNumberRows(
@@ -534,6 +699,16 @@ function CatalogItemFormDialog({
 
   const setField = (key: string, value: string): void => {
     setValues(current => ({ ...current, [key]: value }))
+  }
+
+  /** Toggle one option of a checks field; the group serializes as comma-joined values. */
+  const toggleCheck = (key: string, option: string, checked: boolean): void => {
+    setValues((current) => {
+      const selected = new Set((current[key] ?? '').split(',').filter(part => part.length > 0))
+      if (checked) selected.add(option)
+      else selected.delete(option)
+      return { ...current, [key]: [...selected].join(',') }
+    })
   }
 
   const submit = async (): Promise<void> => {
@@ -616,28 +791,42 @@ function CatalogItemFormDialog({
                     <SelectContent>
                       {field.options.map(option => (
                         <SelectItem key={option} value={option}>
-                          {field.key === 'lensType' ? LENS_TYPE_LABELS[option as LensType] : option}
+                          {field.labels?.[option] ?? option}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 )
-                : field.type === 'textarea'
+                : field.type === 'checks' && field.options !== undefined
                   ? (
-                    <Textarea
-                      value={values[field.key] ?? ''}
-                      placeholder={field.placeholder}
-                      onChange={(event) => { setField(field.key, event.target.value) }}
-                    />
+                    <div className="flex flex-wrap gap-x-4 gap-y-2">
+                      {field.options.map(option => (
+                        <label key={option} className="flex items-center gap-1.5 text-xs font-normal">
+                          <Checkbox
+                            checked={(values[field.key] ?? '').split(',').includes(option)}
+                            onCheckedChange={(checked) => { toggleCheck(field.key, option, checked === true) }}
+                          />
+                          {field.labels?.[option] ?? option}
+                        </label>
+                      ))}
+                    </div>
                   )
-                  : (
-                    <Input
-                      value={values[field.key] ?? ''}
-                      placeholder={field.placeholder}
-                      inputMode={field.type === 'number' ? 'decimal' : undefined}
-                      onChange={(event) => { setField(field.key, event.target.value) }}
-                    />
-                  )}
+                  : field.type === 'textarea'
+                    ? (
+                      <Textarea
+                        value={values[field.key] ?? ''}
+                        placeholder={field.placeholder}
+                        onChange={(event) => { setField(field.key, event.target.value) }}
+                      />
+                    )
+                    : (
+                      <Input
+                        value={values[field.key] ?? ''}
+                        placeholder={field.placeholder}
+                        inputMode={field.type === 'number' ? 'decimal' : undefined}
+                        onChange={(event) => { setField(field.key, event.target.value) }}
+                      />
+                    )}
             </FormField>
           ))}
 
@@ -701,12 +890,18 @@ function fieldValuesOf(item: WikiItem | undefined): Record<string, string> {
     case 'frame':
       return {
         ...base,
-        frameMaterial: item.frameMaterial,
+        ...(item.material === undefined ? {} : { material: item.material }),
+        ...(item.frameType === undefined ? {} : { frameType: item.frameType }),
+        ...(item.frameShape === undefined ? {} : { frameShape: item.frameShape }),
+        ...(item.style === undefined ? {} : { style: item.style }),
+        ...(item.gender === undefined ? {} : { gender: item.gender }),
+        ...(item.nosePad === undefined ? {} : { nosePad: item.nosePad }),
         ...(item.color === undefined ? {} : { color: item.color }),
         ...(item.lensWidth === undefined ? {} : { lensWidth: String(item.lensWidth) }),
         ...(item.lensHeight === undefined ? {} : { lensHeight: String(item.lensHeight) }),
         ...(item.bridgeWidth === undefined ? {} : { bridgeWidth: String(item.bridgeWidth) }),
         ...(item.templeLength === undefined ? {} : { templeLength: String(item.templeLength) }),
+        ...(item.totalWidth === undefined ? {} : { totalWidth: String(item.totalWidth) }),
         ...(item.weightG === undefined ? {} : { weightG: String(item.weightG) }),
       }
     case 'lens':
@@ -714,7 +909,12 @@ function fieldValuesOf(item: WikiItem | undefined): Record<string, string> {
         ...base,
         refractiveIndex: item.refractiveIndex,
         lensType: item.lensType,
+        ...(item.lensDesign === undefined ? {} : { lensDesign: item.lensDesign }),
+        ...(item.lensFunctions === undefined || item.lensFunctions.length === 0
+          ? {}
+          : { lensFunctions: item.lensFunctions.join(',') }),
         ...(item.abbe === undefined ? {} : { abbe: String(item.abbe) }),
+        ...(item.diameterMm === undefined ? {} : { diameterMm: String(item.diameterMm) }),
         ...(item.coating === undefined ? {} : { coating: item.coating }),
         ...(item.sphereRange === undefined ? {} : { sphereRange: item.sphereRange }),
       }
@@ -749,17 +949,27 @@ function draftOf(
   }
   switch (kind) {
     case 'frame': {
-      const frameMaterial = (values.frameMaterial ?? '').trim()
-      if (frameMaterial.length === 0) {
-        report('镜架类型需要填写镜架材质。')
+      const material = values.material
+      if (material === undefined || material.length === 0) {
+        report('镜架需要选择镜架材质。')
         return undefined
       }
+      const frameType = optionalEnum<FrameType>(values, 'frameType')
+      const frameShape = optionalEnum<FrameShape>(values, 'frameShape')
+      const style = optionalEnum<FrameStyle>(values, 'style')
+      const gender = optionalEnum<Gender>(values, 'gender')
+      const nosePad = optionalEnum<NosePad>(values, 'nosePad')
       const numeric = collectNumbers(FRAME_FIELDS, values, report)
       if (numeric === undefined) return undefined
       return {
         ...base,
         kind: 'frame',
-        frameMaterial,
+        material: material as FrameMaterial,
+        ...(frameType === undefined ? {} : { frameType }),
+        ...(frameShape === undefined ? {} : { frameShape }),
+        ...(style === undefined ? {} : { style }),
+        ...(gender === undefined ? {} : { gender }),
+        ...(nosePad === undefined ? {} : { nosePad }),
         ...(values.color !== undefined && values.color.trim().length > 0 ? { color: values.color.trim() } : {}),
         ...numeric,
       }
@@ -775,6 +985,8 @@ function draftOf(
         report('镜片需要选择镜片类型。')
         return undefined
       }
+      const lensDesign = optionalEnum<LensDesign>(values, 'lensDesign')
+      const lensFunctions = (values.lensFunctions ?? '').split(',').filter(part => part.length > 0)
       const numeric = collectNumbers(LENS_FIELDS, values, report)
       if (numeric === undefined) return undefined
       return {
@@ -782,6 +994,8 @@ function draftOf(
         kind: 'lens',
         refractiveIndex: refractiveIndex as RefractiveIndex,
         lensType,
+        ...(lensDesign === undefined ? {} : { lensDesign }),
+        ...(lensFunctions.length === 0 ? {} : { lensFunctions: lensFunctions as LensFunction[] }),
         ...(values.coating !== undefined && values.coating.trim().length > 0 ? { coating: values.coating.trim() } : {}),
         ...(values.sphereRange !== undefined && values.sphereRange.trim().length > 0
           ? { sphereRange: values.sphereRange.trim() }
@@ -806,6 +1020,12 @@ function draftOf(
       }
     }
   }
+}
+
+/** Read one optional enum Select value back; absent/empty stays absent. */
+function optionalEnum<T extends string>(values: Record<string, string>, key: string): T | undefined {
+  const raw = values[key]
+  return raw === undefined || raw.length === 0 ? undefined : raw as T
 }
 
 /** Parse the numeric fields of one kind; reports the first bad number. */

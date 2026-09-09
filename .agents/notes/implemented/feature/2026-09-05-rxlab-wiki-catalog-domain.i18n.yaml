@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-05-rxlab-wiki-catalog-domain.md
-2026-09-05-rxlab-wiki-catalog-domain.md: 169a8140479275a442767fa3330dc3195fcb89a9
-2026-09-05-rxlab-wiki-catalog-domain.zh.md: 5d831dea04142423da5daa81d6ac2101d20dbc9e
+2026-09-05-rxlab-wiki-catalog-domain.md: 8348368fbdb6badbe5f2b5b9efff13b618715f24
+2026-09-05-rxlab-wiki-catalog-domain.zh.md: c526e1fee10c856acb6833482b8cdd165c2a7c54

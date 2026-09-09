@@ -10,7 +10,7 @@ rxlab 工作台（`dsh rxlab`）需要让「商品 Wiki」模块成为后续验�
 
 ## 决策
 
-以新官方双面包 `@deepseek-ai/dsh-rxlab-catalog` 交付，落在 `packages/api/`（而非 `packages/bundle/`）：bundle 组是「可安装的 patch 层装配」，没有 tsdown `clientBundle`/typert 生成链；api 组各 controller 包才有该链。Host 侧数据经由 **storage domain** 形态（`ctx.storageDomain`）而非自建 JSON 文件：`defineDomain` 声明 `rxlab_catalog`（version 1、`per-record` 布局使每条记录为独立文档）、单张 `items` 表，zod schema 是 `frame` / `lens` / `product` 的判别联合。域名为 `rxlab_catalog` 而非 `rxlab-catalog`：storage 单元名须匹配 `[a-z][a-z0-9_]*`，带连字符的名字会被 `defineDomain` 立刻拒绝。
+以新官方双面包 `@deepseek-ai/dsh-rxlab-catalog` 交付，落在 `packages/api/`（而非 `packages/bundle/`）：bundle 组是「可安装的 patch 层装配」，没有 tsdown `clientBundle`/typert 生成链；api 组各 controller 包才有该链。（2026-09-09 起该域升 v2：结构化属性词表、价格历史与采集导入缝，见 [v2 注记](2026-09-09-rxlab-wiki-v2-attributes-and-import.zh.md)；本注记的装配与 Remote 形态决策仍属当前事实。）Host 侧数据经由 **storage domain** 形态（`ctx.storageDomain`）而非自建 JSON 文件：`defineDomain` 声明 `rxlab_catalog`（per-record 布局使每条记录为独立文档）、单张 `items` 表，zod schema 是 `frame` / `lens` / `product` 的判别联合。域名为 `rxlab_catalog` 而非 `rxlab-catalog`：storage 单元名须匹配 `[a-z][a-z0-9_]*`，带连字符的名字会被 `defineDomain` 立刻拒绝。
 
 `CatalogController extends TypertRemoteService` 注册 `rxlabCatalog` Remote namespace（`super(ctx, 'catalogController', { namespace: 'rxlabCatalog' })`），在 `[Service.init]` 打开域，暴露 `list`（kind 过滤 + 品牌/型号/名称大小写不敏感子串，按最近写入倒序的摘要）、`get`、`upsert`（在 wire 边界用域 zod schema 校验 draft，服务端铸造 id 与 `updatedAt`，排入域的单写链）与 `delete`（endpoint 拼写为 `delete` 而非 `remove`：Client namespace 服务保留了 `remove`）。Wire 与持久类型是 `src/types.ts` 中的浏览器安全 JSON 类型；zod 仅存于 host 侧 `src/domain.ts`。
 

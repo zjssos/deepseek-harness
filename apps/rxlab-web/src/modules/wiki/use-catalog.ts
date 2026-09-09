@@ -16,6 +16,8 @@ import { useCallback, useEffect, useState } from 'react'
 // into the ClientRemote type shared with the rest of the workbench.
 import type {} from '@deepseek-ai/dsh-rxlab-catalog/remote'
 import type {
+  CatalogImportRequest,
+  CatalogImportValue,
   CatalogItemSummary,
   CatalogRemoveRequest,
   CatalogUpsertRequest,
@@ -112,6 +114,19 @@ export async function catalogUpsert(
   const request: CatalogUpsertRequest = { item: draft }
   const result = await runtime.remote.rxlabCatalog.upsert(request)
   if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+}
+
+/**
+ * Import one collected listing into the catalog (the collect→wiki seam);
+ * throws the readable failure text and returns the merge-or-create verdict.
+ */
+export async function catalogImportCollected(
+  runtime: RxlabClientRuntime,
+  request: CatalogImportRequest,
+): Promise<CatalogImportValue> {
+  const result = await runtime.remote.rxlabCatalog.importCollected(request)
+  if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+  return result.value
 }
 
 /** Delete one catalog record; throws the readable failure text. */

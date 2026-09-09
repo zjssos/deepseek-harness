@@ -2,7 +2,7 @@
  * The `rxlab_collect` storage domain: zod record schemas for the link /
  * capture / batch tables and the `defineDomain` spec the CollectController
  * opens. The zod schemas validate at the durable read boundary (per-record
- * layout, version 1) and double as the controller's create/update validator;
+ * layout, version 2) and double as the controller's create/update validator;
  * the inferred record types mirror the browser-safe wire types in `types.ts`.
  * @module @deepseek-ai/dsh-rxlab-collect/src/domain
  */
@@ -75,6 +75,11 @@ const captureFields = {
   buyUrl: httpUrl.optional(),
   mainImageUrl: httpUrl.optional(),
   detailImageUrls: z.array(httpUrl).max(30).optional(),
+  /** Spec-parameter name/value pairs from the detail page's parameter table. */
+  params: z.array(z.object({
+    name: z.string().trim().min(1).max(100),
+    value: z.string().trim().min(1).max(300),
+  })).max(60).optional(),
 }
 
 /** One stored link record. */
@@ -127,13 +132,14 @@ const linkDraftFields = {
 /**
  * The collect domain spec: one table per entity family, per-record layout so
  * each document is independently disposable. The CollectController opens this
- * through `ctx.storageDomain`; version 1 is the first shipped shape of the
- * rxlab collection data (links as assets, captures as history, batches as run
- * state).
+ * through `ctx.storageDomain`; version 2 adds the optional capture `params`
+ * (spec-parameter pairs feeding the catalog import), and version-1 captures
+ * stay readable through `compatibleVersions`.
  */
 export const collectDomainSpec = defineDomain({
   name: 'rxlab_collect',
-  version: 1,
+  version: 2,
+  compatibleVersions: [1],
   layout: 'per-record',
   tables: {
     links: domainTable<CollectLinkId, z.infer<typeof linkRecord>>(linkRecord),

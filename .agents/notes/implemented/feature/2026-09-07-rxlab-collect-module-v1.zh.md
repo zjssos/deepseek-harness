@@ -14,7 +14,7 @@ rxlab 工作台(`dsh rxlab`)需要让「商品采集(collect)」模块真正拿�
 
 v1 落为新的双面官方包 `@deepseek-ai/dsh-rxlab-collect`(置于 `packages/api/`,完整镜像 `@deepseek-ai/dsh-rxlab-catalog`:`clientBundle`/typert 生成链、profile 行组装、`dsh.client` 自挂载、storage-domain 形态一致)。它在一个存储域内拥有三类实体:
 
-- `rxlab_collect` 域(version 1,per-record)三张表:`links`(资产:平台/店铺/sku/url/mobileUrl/状态/最近采集摘要)、`captures`(每次成功抓取一条:标题/价格(显示值+原文+说明)/已选SKU/购买链接/时间)、`batches`(排队运行状态:逐链接条目与计数)。
+- `rxlab_collect` 域(交付时 version 1,per-record;后升 v2 增加 capture 可选 `params` 并保持 v1 可读,见 [Wiki v2 注记](2026-09-09-rxlab-wiki-v2-attributes-and-import.zh.md))三张表:`links`(资产:平台/店铺/sku/url/mobileUrl/状态/最近采集摘要)、`captures`(每次成功抓取一条:标题/价格(显示值+原文+说明)/已选SKU/购买链接/时间)、`batches`(排队运行状态:逐链接条目与计数)。
 - `CollectController extends TypertRemoteService` 注册 `rxlabCollect` Remote 命名空间:链接动词 `listLinks`/`getLink`/`upsertLink`(同一 平台+规范化URL 合并为一行)/`removeLink`/`importLinks`(CSV 各行独立校验,拒绝行原样返回 UI);批次动词 `createBatch`(校验每个 link id 后入队)/`listBatches`/`getBatch`;`listCaptures` 查单链接历史。
 - 执行器注册表:平台 → 确定性 `Collector`。v1 只带 JD 适配器(匿名 headless chromium:移动页标题 + 分享/复制链接购买链接 + 桌面页价格读取);未实现平台以 `collect/adapter-unavailable` fail loud。controller 在服务生命周期内持有 chromium 单例(懒启动、随 dispose 关闭),批次串行执行(单条进程内 promise 链、1 s 礼貌间隔),只在每个条目**提交点**落盘(capture 行、link 状态/last-*、batch 条目与计数)。
 

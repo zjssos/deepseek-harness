@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import {
+  BookOpen,
   History,
   Link2,
   Loader2,
@@ -41,8 +42,10 @@ import type {
   CollectLinkStatus,
   CollectPlatform,
 } from '@deepseek-ai/dsh-rxlab-collect/types'
+import type { CatalogImportRequest } from '@deepseek-ai/dsh-rxlab-catalog/types'
 import { useConnected, useRxlabClient } from '@/modules/agent/use-sessions'
 import type { RxlabClientRuntime } from '@/modules/agent/client'
+import { catalogImportCollected } from '@/modules/wiki/use-catalog'
 import {
   createBatch,
   importLinks,
@@ -616,7 +619,7 @@ function CsvImportDialog({ runtime, open, onOpenChange, notify, onSaved }: Dialo
   )
 }
 
-/** 链接详情:最近一次采集字段 + 历史记录。 */
+/** 链接详情:最近一次采集字段 + 历史记录 + 导入到 Wiki。 */
 function LinkDetailDialog({ runtime, connected, link, onOpenChange }: {
   readonly runtime: RxlabClientRuntime
   readonly connected: boolean
@@ -625,6 +628,49 @@ function LinkDetailDialog({ runtime, connected, link, onOpenChange }: {
 }) {
   const captures = useLinkCaptures(runtime, connected, link?.id)
   const latest = captures.state.items[0]
+  const [importing, setImporting] = useState(false)
+  const [importMessage, setImportMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    setImporting(false)
+    setImportMessage(null)
+  }, [link?.id])
+
+  const importWiki = useCallback(async () => {
+    if (link === undefined || latest === undefined) return
+    setImporting(true)
+    setImportMessage(null)
+    try {
+      const request: CatalogImportRequest = {
+        source: {
+          platform: link.platform,
+          url: link.url,
+          linkId: link.id,
+          shopName: link.shopName,
+          sku: link.sku,
+          captureId: latest.id,
+          capturedAt: latest.capturedAt,
+        },
+        listing: {
+          title: latest.fields.title ?? link.titleAtAdd ?? link.url,
+          selectedSku: latest.fields.selectedSku,
+          price: latest.fields.price?.value,
+          priceRaw: latest.fields.price?.raw,
+          params: latest.fields.params,
+          mainImageUrl: latest.fields.mainImageUrl,
+        },
+      }
+      const result = await catalogImportCollected(runtime, request)
+      setImportMessage(result.created ? '已导入商品 Wiki' : '已更新 Wiki 记录（价格/属性合并）')
+    } catch (cause) {
+      setImportMessage(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setImporting(false)
+    }
+  }, [runtime, link, latest])
+
+  const canImport = latest !== undefined && latest.error === undefined
+
   return (
     <Dialog open={link !== undefined} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -677,6 +723,19 @@ function LinkDetailDialog({ runtime, connected, link, onOpenChange }: {
                 ))}
               </div>
             </div>
+            <DialogFooter className="items-center gap-2 sm:justify-between">
+              {importMessage !== null ? (
+                <span className="text-xs text-muted-foreground">{importMessage}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {canImport ? '将把最近一次采集导入商品 Wiki。' : '需要一次成功的采集才能导入。'}
+                </span>
+              )}
+              <Button size="sm" disabled={!canImport || importing} onClick={() => { void importWiki() }}>
+                {importing ? <Loader2 className="animate-spin" /> : <BookOpen />}
+                导入到 Wiki
+              </Button>
+            </DialogFooter>
           </div>
         )}
       </DialogContent>

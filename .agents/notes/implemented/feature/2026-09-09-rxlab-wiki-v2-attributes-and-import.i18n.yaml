@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-09-rxlab-wiki-v2-attributes-and-import.md
+2026-09-09-rxlab-wiki-v2-attributes-and-import.md: c90e3258bef43d2ba5168baa8b359aee3c6b0e27
+2026-09-09-rxlab-wiki-v2-attributes-and-import.zh.md: c17e1c8002e5731b8c5f0dfa41d98dc92c2c3960

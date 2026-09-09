@@ -118,6 +118,8 @@ export interface CollectCaptureFields {
   readonly mainImageUrl?: string | undefined
   /** Detail-gallery image URLs; may stay empty when images are lazy. */
   readonly detailImageUrls?: readonly string[] | undefined
+  /** Spec-parameter name/value pairs from the detail page's parameter table. */
+  readonly params?: readonly { readonly name: string; readonly value: string }[] | undefined
 }
 
 /** One price reading at capture time. */

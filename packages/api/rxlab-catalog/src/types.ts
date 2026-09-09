@@ -1,7 +1,8 @@
 /**
  * Public wire vocabulary of the rxlab catalog Remote namespace: the durable
  * `rxlab_catalog` record model (a discriminated union of frame / lens / product
- * master-data rows), the list/get/upsert/remove requests and results, and the
+ * master-data rows with structured attributes, price history, and collection
+ * lineage), the list/get/upsert/remove/import requests and results, and the
  * catalog failure codes. Types only — the zod schemas that validate this model
  * live in `domain.ts`, and the durable rows themselves are browser-safe JSON.
  *
@@ -23,6 +24,12 @@ export type WikiKind = 'frame' | 'lens' | 'product'
 /** Where the row entered the catalog: hand-curated or collected from a source. */
 export type WikiOrigin = 'manual' | 'collected'
 
+/**
+ * The collected-platform vocabulary, mirrored from the collect domain; the
+ * collector owns the authoritative list.
+ */
+export type CollectPlatform = 'jd' | 'taobao' | '1688' | 'manual'
+
 /** Stable lens-type vocabulary a fitting rule can switch on. */
 export type LensType =
   | 'single-vision'
@@ -32,8 +39,91 @@ export type LensType =
   | 'occupational'
   | 'other'
 
-/** Lens refractive-index vocabulary, the popular stock values. */
-export type RefractiveIndex = '1.56' | '1.60' | '1.67' | '1.74'
+/** Lens refractive-index vocabulary, the stock values incl. 1.59 PC and 1.61. */
+export type RefractiveIndex =
+  | '1.50'
+  | '1.56'
+  | '1.59'
+  | '1.60'
+  | '1.61'
+  | '1.67'
+  | '1.71'
+  | '1.74'
+
+/** Frame material vocabulary; the glasses-industry stock categories. */
+export type FrameMaterial =
+  | 'pure-titanium'
+  | 'beta-titanium'
+  | 'titanium'
+  | 'metal-alloy'
+  | 'stainless-steel'
+  | 'tr90'
+  | 'plastic-steel'
+  | 'acetate'
+  | 'pc'
+  | 'other'
+
+/** Frame front-shape vocabulary. */
+export type FrameShape =
+  | 'square'
+  | 'round'
+  | 'oval'
+  | 'square-round'
+  | 'cat-eye'
+  | 'pilot'
+  | 'browline'
+  | 'polygon'
+  | 'other'
+
+/** Rim construction; constrains which lens materials fit. */
+export type FrameType = 'full-rim' | 'semi-rimless' | 'rimless'
+
+/** Style vocabulary a recommendation can filter on. */
+export type FrameStyle = 'business' | 'retro' | 'casual' | 'fashion' | 'sport' | 'other'
+
+/** Intended-wearer vocabulary. */
+export type Gender = 'male' | 'female' | 'unisex'
+
+/** Nose-pad construction; separate pads adjust for lower bridges. */
+export type NosePad = 'separate' | 'integrated'
+
+/** Lens surface-design vocabulary. */
+export type LensDesign = 'spherical' | 'aspheric' | 'double-aspheric'
+
+/** Lens function vocabulary; orthogonal to the v1 `lensType` family field. */
+export type LensFunction = 'blue-light' | 'photochromic' | 'polarized' | 'tinted' | 'driving'
+
+/** One observed price reading: value plus when and where it was observed. */
+export interface PriceEntry {
+  /** Observed price value in the listing currency. */
+  readonly value: number
+  /** ISO-8601 instant of the observation, from a capture or a manual entry. */
+  readonly capturedAt: string
+  /** Entry route of this reading. */
+  readonly source: 'collected' | 'manual'
+  /** Foreign `rxlab_collect` capture id when the reading came from a capture. */
+  readonly captureId?: string | undefined
+  /** Free-text context such as "活动价". */
+  readonly note?: string | undefined
+}
+
+/** Collection lineage: which collected link produced (and last updated) this row. */
+export interface ItemSource {
+  /** Collected platform. */
+  readonly platform: CollectPlatform
+  /** Canonical collected page url. */
+  readonly url: string
+  /** Foreign `rxlab_collect` link id; the import idempotency key. */
+  readonly linkId: string
+  /** Shop display name at import time. */
+  readonly shopName?: string | undefined
+  /** Seller sku or listing id. */
+  readonly sku?: string | undefined
+  /** Foreign capture id of the most recent import. */
+  readonly captureId?: string | undefined
+  /** ISO-8601 instant of the most recent import. */
+  readonly capturedAt?: string | undefined
+}
 
 /** Fields every catalog row shares; all values are JSON primitives. */
 export interface WikiItemBase {
@@ -51,15 +141,31 @@ export interface WikiItemBase {
   readonly rawUrl?: string | undefined
   /** Free-form operator notes. */
   readonly notes?: string | undefined
+  /** Observed price readings, oldest first; consumers read the last entry. */
+  readonly priceHistory?: readonly PriceEntry[] | undefined
+  /** Collection lineage; absent for manual rows. */
+  readonly source?: ItemSource | undefined
   /** ISO-8601 instant of the last durable write. */
   readonly updatedAt: string
 }
 
-/** One collected-or-manual eyeglass frame with its fitting geometry. */
+/** One collected-or-manual eyeglass frame with its fitting attributes. */
 export interface FrameItem extends WikiItemBase {
   readonly kind: 'frame'
-  /** Frame material display text (metal, acetate, titanium, ...). */
-  readonly frameMaterial: string
+  /** Legacy v1 free-text material; kept optional for v1-record compatibility. */
+  readonly frameMaterial?: string | undefined
+  /** Structured material vocabulary; the value fitting rules switch on. */
+  readonly material?: FrameMaterial | undefined
+  /** Front shape. */
+  readonly frameShape?: FrameShape | undefined
+  /** Rim construction. */
+  readonly frameType?: FrameType | undefined
+  /** Style family. */
+  readonly style?: FrameStyle | undefined
+  /** Intended wearer. */
+  readonly gender?: Gender | undefined
+  /** Nose-pad construction. */
+  readonly nosePad?: NosePad | undefined
   /** Horizontal lens size in millimetres. */
   readonly lensWidth?: number | undefined
   /** Vertical lens size in millimetres. */
@@ -68,6 +174,8 @@ export interface FrameItem extends WikiItemBase {
   readonly bridgeWidth?: number | undefined
   /** Temple length in millimetres. */
   readonly templeLength?: number | undefined
+  /** Overall front width in millimetres. */
+  readonly totalWidth?: number | undefined
   /** Frame weight in grams. */
   readonly weightG?: number | undefined
   /** Frame colour display text. */
@@ -81,12 +189,18 @@ export interface LensItem extends WikiItemBase {
   readonly refractiveIndex: RefractiveIndex
   /** Abbe number when the supplier publishes one. */
   readonly abbe?: number | undefined
-  /** Lens design family. */
+  /** Surface design family. */
+  readonly lensDesign?: LensDesign | undefined
+  /** Lens design family (the v1 vocabulary, kept for record compatibility). */
   readonly lensType: LensType
+  /** Structured function tags. */
+  readonly lensFunctions?: readonly LensFunction[] | undefined
   /** Coating stack display text (anti-reflective, hard, ...). */
   readonly coating?: string | undefined
   /** Sphere range the lens can correct, free text such as "-8.00 ~ +6.00". */
   readonly sphereRange?: string | undefined
+  /** Blank lens diameter in millimetres. */
+  readonly diameterMm?: number | undefined
 }
 
 /** One collected e-commerce product placeholder awaiting structured mapping. */
@@ -113,6 +227,8 @@ export interface WikiItemDraftBase {
   readonly origin: WikiOrigin
   readonly rawUrl?: string | undefined
   readonly notes?: string | undefined
+  readonly priceHistory?: readonly PriceEntry[] | undefined
+  readonly source?: ItemSource | undefined
 }
 
 /** Draft of one frame record (id and updatedAt are server-minted). */
@@ -120,11 +236,18 @@ export interface FrameItemDraft extends WikiItemDraftBase {
   readonly kind: 'frame'
   /** Present to replace an existing record; absent mints a new one. */
   readonly id?: CatalogItemId | undefined
-  readonly frameMaterial: string
+  readonly frameMaterial?: string | undefined
+  readonly material?: FrameMaterial | undefined
+  readonly frameShape?: FrameShape | undefined
+  readonly frameType?: FrameType | undefined
+  readonly style?: FrameStyle | undefined
+  readonly gender?: Gender | undefined
+  readonly nosePad?: NosePad | undefined
   readonly lensWidth?: number | undefined
   readonly lensHeight?: number | undefined
   readonly bridgeWidth?: number | undefined
   readonly templeLength?: number | undefined
+  readonly totalWidth?: number | undefined
   readonly weightG?: number | undefined
   readonly color?: string | undefined
 }
@@ -136,9 +259,12 @@ export interface LensItemDraft extends WikiItemDraftBase {
   readonly id?: CatalogItemId | undefined
   readonly refractiveIndex: RefractiveIndex
   readonly abbe?: number | undefined
+  readonly lensDesign?: LensDesign | undefined
   readonly lensType: LensType
+  readonly lensFunctions?: readonly LensFunction[] | undefined
   readonly coating?: string | undefined
   readonly sphereRange?: string | undefined
+  readonly diameterMm?: number | undefined
 }
 
 /** Draft of one product record (id and updatedAt are server-minted). */
@@ -163,15 +289,33 @@ export interface CatalogItemSummary {
   readonly model?: string | undefined
   readonly name: string
   readonly origin: WikiOrigin
+  /** Latest observed price; absent when no reading is recorded. */
+  readonly price?: number | undefined
+  /** Frame material tag, for frame rows carrying one. */
+  readonly material?: FrameMaterial | undefined
+  /** Refractive index, for lens rows. */
+  readonly refractiveIndex?: RefractiveIndex | undefined
+  /** Lens family tag, for lens rows. */
+  readonly lensType?: LensType | undefined
   readonly updatedAt: string
 }
 
-/** List one catalog slice: optional kind filter plus a free-text brand/model/name match. */
+/** List one catalog slice with free-text and facet filters. */
 export interface CatalogListRequest {
   /** Restrict to one record family; absent lists every family. */
   readonly kind?: WikiKind | undefined
   /** Case-insensitive substring matched against brand, model, and name. */
   readonly query?: string | undefined
+  /** Frame material tag; frame rows only. */
+  readonly material?: FrameMaterial | undefined
+  /** Rim construction; frame rows only. */
+  readonly frameType?: FrameType | undefined
+  /** Refractive index; lens rows only. */
+  readonly refractiveIndex?: RefractiveIndex | undefined
+  /** Inclusive lower bound on the latest observed price. */
+  readonly minPrice?: number | undefined
+  /** Inclusive upper bound on the latest observed price. */
+  readonly maxPrice?: number | undefined
 }
 
 /** Ordered catalog rows for one {@link CatalogListRequest}, newest write first. */
@@ -209,6 +353,46 @@ export interface CatalogRemoveRequest {
 export interface CatalogRemoveValue {
   /** Whether a record existed under the id (false never writes). */
   readonly removed: boolean
+}
+
+/** One collected listing the importer receives from the collect Remote. */
+export interface CollectedListing {
+  /** Captured listing title. */
+  readonly title: string
+  /** Selected variant text, e.g. "BA7009B15-哑黑银". */
+  readonly selectedSku?: string | undefined
+  /** Captured price value when the capture read one. */
+  readonly price?: number | undefined
+  /** Raw price text as displayed, kept for reference. */
+  readonly priceRaw?: string | undefined
+  /** Spec-parameter name/value pairs captured from the detail page. */
+  readonly params?: readonly { readonly name: string; readonly value: string }[] | undefined
+  /** Main image url captured from the listing. */
+  readonly mainImageUrl?: string | undefined
+}
+
+/** Import one collected listing into the catalog under its link lineage. */
+export interface CatalogImportRequest {
+  /** Collection lineage; imports merge on `source.linkId`. */
+  readonly source: {
+    readonly platform: CollectPlatform
+    readonly url: string
+    readonly linkId: string
+    readonly shopName?: string | undefined
+    readonly sku?: string | undefined
+    readonly captureId?: string | undefined
+    readonly capturedAt?: string | undefined
+  }
+  /** Captured listing fields to extract attributes from. */
+  readonly listing: CollectedListing
+}
+
+/** The stored record after one {@link CatalogImportRequest}. */
+export interface CatalogImportValue {
+  /** The stored record after the merge-or-create. */
+  readonly item: WikiItem
+  /** Whether this import minted a new record (false merges an existing one). */
+  readonly created: boolean
 }
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
