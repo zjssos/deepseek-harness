@@ -146,7 +146,7 @@ function canonicalize(platform: CollectPlatform, url: string, sku: string | unde
  * and update durable state only at each item's commit point.
  */
 export class CollectController extends TypertRemoteService {
-  static inject = ['storageDomain']
+  static inject = ['storageDomain', 'settings']
 
   private links?: KvTable<CollectLinkId, StoredLink>
   private captures?: KvTable<CollectCaptureId, StoredCapture>
@@ -188,8 +188,14 @@ export class CollectController extends TypertRemoteService {
 
   /** Launch headless chromium, or attach to the configured CDP browser for capture runs. */
   private async launchChromium(): Promise<Browser> {
-    const settings = (this.ctx as unknown as { settings?: { get?: (ns: string) => unknown } }).settings
-    const browserSettings = settings?.get?.('rxlab-collect-browser') as { launchMode?: string; cdpEndpoint?: string } | undefined
+    let browserSettings: { launchMode?: string; cdpEndpoint?: string } | undefined
+    try {
+      browserSettings = this.ctx.settings.get('rxlab-collect-browser') as
+        | { launchMode?: string; cdpEndpoint?: string }
+        | undefined
+    } catch {
+      browserSettings = undefined
+    }
     if (browserSettings?.launchMode === 'cdp') {
       const endpoint = browserSettings.cdpEndpoint ?? 'http://127.0.0.1:9222'
       try {
