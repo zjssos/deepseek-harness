@@ -173,7 +173,7 @@ export class CollectController extends TypertRemoteService {
     this.links = domain.table('links')
     this.captures = domain.table('captures')
     this.batches = domain.table('batches')
-    this.registry = createCollectorRegistry(() => this.getBrowser())
+    this.registry = createCollectorRegistry(() => this.getBrowser(), () => this.captureContext())
     this.ctx.effect(() => () => {
       const pending = this.browserPromise
       if (pending !== undefined) void pending.then(browser => browser.close()).catch(() => undefined)
@@ -192,6 +192,21 @@ export class CollectController extends TypertRemoteService {
     this.browserPromise = created
     created.catch(() => { if (this.browserPromise === created) this.browserPromise = undefined })
     return created
+  }
+
+  /**
+   * The capture context mode collectors should use right now: `default` when
+   * attaching to a real CDP browser (login cookies apply, pages open as tabs
+   * in the existing window), `isolated` for the anonymous headless chromium.
+   */
+  private captureContext(): 'isolated' | 'default' {
+    try {
+      const value = this.ctx.settings.get('rxlab-collect-browser') as { launchMode?: string } | undefined
+      if (value?.launchMode === 'cdp') return 'default'
+    } catch {
+      // Settings unavailable: fall back to the anonymous isolated context.
+    }
+    return 'isolated'
   }
 
   /** Launch headless chromium, or attach to a CDP browser when the namespace is in cdp mode. */

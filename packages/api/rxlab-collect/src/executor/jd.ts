@@ -2,15 +2,18 @@
  * JD deterministic collector: anonymous headless capture of one item.m.jd.com
  * product page — title, selected variant, share-produced purchase link — plus
  * a desktop-page price read, spec-parameter pairs, and a mobile-page
- * price/main-image fallback. Ported from the rxlab collect feasibility probe
- * (see the gpw/probes evidence in the module Agent Note); the share/copy flow
- * is the mechanism the merchant uses to obtain a buyable link.
+ * price/main-image fallback. Under CDP mode the same reads run in the real
+ * browser's default context so the platform login cookies apply and pages open
+ * as tabs rather than fresh windows. Ported from the rxlab collect feasibility
+ * probe (see the gpw/probes evidence in the module Agent Note); the share/copy
+ * flow is the mechanism the merchant uses to obtain a buyable link.
  * @module @deepseek-ai/dsh-rxlab-collect/src/executor/jd
  */
 
 import type { Browser } from 'playwright'
 import type { CollectPrice } from '../types.ts'
 import { cleanJdTitle, jdDesktopUrl, jdMobileUrl, jdSkuFromUrl } from './parse.ts'
+import { openCaptureSession, type CaptureContextMode } from './context.ts'
 import type { Collector, CollectorResult } from './types.ts'
 
 const MOBILE_UA =
@@ -84,9 +87,17 @@ function priceFrom(raw: string, note: string): CollectPrice | undefined {
  * table (品牌/材质/尺寸...), both absent when the anonymous session hits a
  * risk page instead of the product page.
  */
-async function readJdDesktop(browser: Browser, url: string): Promise<{ price?: CollectPrice; params?: JdParamPair[] }> {
-  const context = await browser.newContext({ userAgent: DESKTOP_UA, locale: 'zh-CN', viewport: { width: 1440, height: 900 } })
-  const page = await context.newPage()
+async function readJdDesktop(
+  browser: Browser,
+  resolveMode: () => CaptureContextMode,
+  url: string,
+): Promise<{ price?: CollectPrice; params?: JdParamPair[] }> {
+  const session = await openCaptureSession(browser, resolveMode(), {
+    userAgent: DESKTOP_UA,
+    locale: 'zh-CN',
+    viewport: { width: 1440, height: 900 },
+  })
+  const page = session.page
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await wait(2400)
@@ -116,27 +127,31 @@ async function readJdDesktop(browser: Browser, url: string): Promise<{ price?: C
       ...(raw.params.length === 0 ? {} : { params: raw.params }),
     }
   } finally {
-    await context.close().catch(() => undefined)
+    await session.close()
   }
 }
 
 /**
  * Build the JD collector over a controller-owned browser handle.
  * @param browser - lazily resolved shared browser (never closed here).
+ * @param resolveMode - context mode resolved per capture (isolated headless, or the CDP default context).
  */
-export function createJdCollector(browser: () => Promise<Browser>): Collector {
+export function createJdCollector(
+  browser: () => Promise<Browser>,
+  resolveMode: () => CaptureContextMode,
+): Collector {
   return {
     async collect(input): Promise<CollectorResult> {
       const sku = input.sku ?? jdSkuFromUrl(input.url)
       if (sku === null) throw new Error('不是 JD 商品详情链接(缺少 sku)')
       const mobileUrl = input.mobileUrl ?? jdMobileUrl(sku)
       const shared = await browser()
-      const context = await shared.newContext({
+      const session = await openCaptureSession(shared, resolveMode(), {
         userAgent: MOBILE_UA,
         locale: 'zh-CN',
         viewport: { width: 414, height: 896 },
       })
-      const page = await context.newPage()
+      const page = session.page
       try {
         const response = await page.goto(mobileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
         const httpOk = response !== null && response.status() < 400
@@ -158,7 +173,7 @@ export function createJdCollector(browser: () => Promise<Browser>): Collector {
         // rather than failing the whole capture.
         let desktop: { price?: CollectPrice; params?: JdParamPair[] } = {}
         try {
-          desktop = await readJdDesktop(shared, jdDesktopUrl(sku))
+          desktop = await readJdDesktop(shared, resolveMode, jdDesktopUrl(sku))
         } catch {
           desktop = {}
         }
@@ -176,7 +191,7 @@ export function createJdCollector(browser: () => Promise<Browser>): Collector {
           },
         }
       } finally {
-        await context.close().catch(() => undefined)
+        await session.close()
       }
     },
   }

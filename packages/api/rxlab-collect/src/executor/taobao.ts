@@ -5,8 +5,9 @@
  * (e.g. JD) risk-blocks the anonymous session. The page is read with a desktop
  * UA: Taobao answers mobile user agents with a phone-login screen even though
  * the same product renders publicly on desktop, so a mobile UA never reaches
- * the goods. Capture is deliberately leaner than JD's (no share-link or spec
- * table): Taobao's public page exposes title/price/image reliably, while
+ * the goods. Under CDP mode the reads run in the real browser's default
+ * context (login cookies apply, pages open as tabs, no fresh windows).
+ * Capture is deliberately leaner than JD's (no share-link or spec table);
  * login-gated or risk pages fail fast with a readable error.
  * @module @deepseek-ai/dsh-rxlab-collect/src/executor/taobao
  */
@@ -14,6 +15,7 @@
 import type { Browser } from 'playwright'
 import type { CollectPrice } from '../types.ts'
 import { cleanTaobaoTitle, taobaoItemUrl } from './parse.ts'
+import { openCaptureSession, type CaptureContextMode } from './context.ts'
 import type { Collector, CollectorResult } from './types.ts'
 
 const DESKTOP_UA =
@@ -31,8 +33,12 @@ function priceFrom(raw: string, note: string): CollectPrice | undefined {
 /**
  * Build the Taobao/Tmall collector over a controller-owned browser handle.
  * @param browser - lazily resolved shared browser (never closed here).
+ * @param resolveMode - context mode resolved per capture (isolated headless, or the CDP default context).
  */
-export function createTaobaoCollector(browser: () => Promise<Browser>): Collector {
+export function createTaobaoCollector(
+  browser: () => Promise<Browser>,
+  resolveMode: () => CaptureContextMode,
+): Collector {
   return {
     async collect(input): Promise<CollectorResult> {
       const url = input.url.includes('item.htm') ? input.url : taobaoItemUrl(input.sku ?? '')
@@ -40,12 +46,12 @@ export function createTaobaoCollector(browser: () => Promise<Browser>): Collecto
         throw new Error('不是淘宝/天猫商品详情链接(缺少 item id)')
       }
       const shared = await browser()
-      const context = await shared.newContext({
+      const session = await openCaptureSession(shared, resolveMode(), {
         userAgent: DESKTOP_UA,
         locale: 'zh-CN',
         viewport: { width: 1440, height: 900 },
       })
-      const page = await context.newPage()
+      const page = session.page
       try {
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
         const httpOk = response !== null && response.status() < 400
@@ -76,7 +82,7 @@ export function createTaobaoCollector(browser: () => Promise<Browser>): Collecto
           },
         }
       } finally {
-        await context.close().catch(() => undefined)
+        await session.close()
       }
     },
   }
