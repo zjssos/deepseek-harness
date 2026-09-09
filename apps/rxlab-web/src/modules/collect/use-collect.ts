@@ -5,7 +5,7 @@
  * controlled refresh state — a nonce the panel bumps plus a light poll while
  * a batch is in flight — not a long subscription.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 // Type-only: pulls the generated `remote.rxlabCollect` namespace declarations
 // into the ClientRemote type shared with the rest of the workbench.
@@ -60,6 +60,7 @@ export function useLinkList(
 ): ListController<CollectLink> {
   const [state, setState] = useState<FetchState<CollectLink>>({ phase: 'loading', items: [] })
   const [nonce, setNonce] = useState(0)
+  const prevKey = useRef<string | null>(null)
   const reload = useCallback(() => { setNonce(value => value + 1) }, [])
 
   const platformKey = filters.platform ?? ''
@@ -69,8 +70,14 @@ export function useLinkList(
 
   useEffect(() => {
     if (runtime === undefined || !connected) return
+    const key = [platformKey, shopKey, statusKey, queryKey].join('\u0000')
+    const keyChanged = prevKey.current !== key
+    prevKey.current = key
     let alive = true
-    setState({ phase: 'loading', items: [] })
+    // Only the first load for a given query clears the list; polls and
+    // post-mutation reloads keep the previous rows until the fresh result
+    // lands, so the page never blanks or flashes mid-refresh.
+    if (keyChanged) setState({ phase: 'loading', items: [] })
     void runtime.remote.rxlabCollect.listLinks({
       ...(platformKey === '' ? {} : { platform: platformKey as CollectPlatform }),
       ...(shopKey === '' ? {} : { shopId: shopKey }),
@@ -80,22 +87,19 @@ export function useLinkList(
       .then((result) => {
         if (!alive) return
         if (!result.ok) {
-          setState({
-            phase: 'error',
-            items: [],
-            error: `${result.error.code}: ${result.error.message}`,
-          })
+          setState(prev => (prev.items.length > 0
+            ? { phase: 'ready', items: prev.items }
+            : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
           return
         }
         setState({ phase: 'ready', items: result.value.items })
       })
       .catch((cause: unknown) => {
         if (alive) {
-          setState({
-            phase: 'error',
-            items: [],
-            error: cause instanceof Error ? cause.message : String(cause),
-          })
+          const message = cause instanceof Error ? cause.message : String(cause)
+          setState(prev => (prev.items.length > 0
+            ? { phase: 'ready', items: prev.items }
+            : { phase: 'error', items: [], error: message }))
         }
       })
     return () => { alive = false }
@@ -111,32 +115,33 @@ export function useBatchList(
 ): ListController<CollectBatchSummary> {
   const [state, setState] = useState<FetchState<CollectBatchSummary>>({ phase: 'loading', items: [] })
   const [nonce, setNonce] = useState(0)
+  const started = useRef(false)
   const reload = useCallback(() => { setNonce(value => value + 1) }, [])
 
   useEffect(() => {
     if (runtime === undefined || !connected) return
     let alive = true
-    setState({ phase: 'loading', items: [] })
+    if (!started.current) {
+      started.current = true
+      setState({ phase: 'loading', items: [] })
+    }
     void runtime.remote.rxlabCollect.listBatches({})
       .then((result) => {
         if (!alive) return
         if (!result.ok) {
-          setState({
-            phase: 'error',
-            items: [],
-            error: `${result.error.code}: ${result.error.message}`,
-          })
+          setState(prev => (prev.items.length > 0
+            ? { phase: 'ready', items: prev.items }
+            : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
           return
         }
         setState({ phase: 'ready', items: result.value.batches })
       })
       .catch((cause: unknown) => {
         if (alive) {
-          setState({
-            phase: 'error',
-            items: [],
-            error: cause instanceof Error ? cause.message : String(cause),
-          })
+          const message = cause instanceof Error ? cause.message : String(cause)
+          setState(prev => (prev.items.length > 0
+            ? { phase: 'ready', items: prev.items }
+            : { phase: 'error', items: [], error: message }))
         }
       })
     return () => { alive = false }
@@ -166,22 +171,30 @@ export function useBatchDetail(
 ): BatchDetailController {
   const [state, setState] = useState<FetchState<CollectBatch>>({ phase: 'loading', items: [] })
   const [nonce, setNonce] = useState(0)
+  const prevKey = useRef<string | null>(null)
   const reload = useCallback(() => { setNonce(value => value + 1) }, [])
   const [polling, setPolling] = useState(false)
 
   useEffect(() => {
     if (runtime === undefined || !connected || batchId === undefined) {
+      prevKey.current = null
       setState({ phase: 'loading', items: [] })
       return
     }
+    const keyChanged = prevKey.current !== batchId
+    prevKey.current = batchId
     let alive = true
-    setState({ phase: 'loading', items: [] })
+    // Only switching to a different batch (or the first read) clears the
+    // current row; in-flight polls keep the batch visible without a flash.
+    if (keyChanged) setState({ phase: 'loading', items: [] })
     const fetchOnce = (): void => {
       void runtime.remote.rxlabCollect.getBatch({ id: batchId })
         .then((result) => {
           if (!alive) return
           if (!result.ok) {
-            setState({ phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` })
+            setState(prev => (prev.items.length > 0
+              ? { phase: 'ready', items: prev.items }
+              : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
             setPolling(false)
             return
           }
@@ -192,11 +205,10 @@ export function useBatchDetail(
         })
         .catch((cause: unknown) => {
           if (alive) {
-            setState({
-              phase: 'error',
-              items: [],
-              error: cause instanceof Error ? cause.message : String(cause),
-            })
+            const message = cause instanceof Error ? cause.message : String(cause)
+            setState(prev => (prev.items.length > 0
+              ? { phase: 'ready', items: prev.items }
+              : { phase: 'error', items: [], error: message }))
             setPolling(false)
           }
         })
@@ -220,35 +232,36 @@ export function useLinkCaptures(
 ): ListController<CollectCapture> {
   const [state, setState] = useState<FetchState<CollectCapture>>({ phase: 'loading', items: [] })
   const [nonce, setNonce] = useState(0)
+  const prevKey = useRef<string | null>(null)
   const reload = useCallback(() => { setNonce(value => value + 1) }, [])
 
   useEffect(() => {
     if (runtime === undefined || !connected || linkId === undefined) {
+      prevKey.current = null
       setState({ phase: 'loading', items: [] })
       return
     }
+    const keyChanged = prevKey.current !== linkId
+    prevKey.current = linkId
     let alive = true
-    setState({ phase: 'loading', items: [] })
+    if (keyChanged) setState({ phase: 'loading', items: [] })
     void runtime.remote.rxlabCollect.listCaptures({ linkId, limit: 30 })
       .then((result) => {
         if (!alive) return
         if (!result.ok) {
-          setState({
-            phase: 'error',
-            items: [],
-            error: `${result.error.code}: ${result.error.message}`,
-          })
+          setState(prev => (prev.items.length > 0
+            ? { phase: 'ready', items: prev.items }
+            : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
           return
         }
         setState({ phase: 'ready', items: result.value.captures })
       })
       .catch((cause: unknown) => {
         if (alive) {
-          setState({
-            phase: 'error',
-            items: [],
-            error: cause instanceof Error ? cause.message : String(cause),
-          })
+          const message = cause instanceof Error ? cause.message : String(cause)
+          setState(prev => (prev.items.length > 0
+            ? { phase: 'ready', items: prev.items }
+            : { phase: 'error', items: [], error: message }))
         }
       })
     return () => { alive = false }
