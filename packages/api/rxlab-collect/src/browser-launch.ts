@@ -67,7 +67,7 @@ export class CollectCdpLauncher extends Service {
 
   private readonly defaults: Required<Config>
   private child: ChildProcess | undefined
-  private endpoint: string
+  private endpointValue: string
 
   constructor(ctx: Context, public config: Config = {}) {
     super(ctx, 'collectCdpLauncher')
@@ -77,7 +77,12 @@ export class CollectCdpLauncher extends Service {
       headless: config.headless ?? false,
       executablePath: config.executablePath ?? '',
     }
-    this.endpoint = `http://127.0.0.1:${this.defaults.port}`
+    this.endpointValue = `http://127.0.0.1:${this.defaults.port}`
+  }
+
+  /** The endpoint the launcher spawns (and probes) browsers on. */
+  get endpoint(): string {
+    return this.endpointValue
   }
 
   /**
@@ -97,7 +102,7 @@ export class CollectCdpLauncher extends Service {
     if (executable.length === 0) {
       return { launched: false, detail: '未配置浏览器可执行文件：请在 collect 模块设置中填写 CDP 浏览器路径' }
     }
-    this.endpoint = `http://127.0.0.1:${port}`
+    this.endpointValue = `http://127.0.0.1:${port}`
     const args = [
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${profileDir}`,
@@ -120,19 +125,19 @@ export class CollectCdpLauncher extends Service {
     }
     const deadline = Date.now() + 8_000
     while (Date.now() < deadline) {
-      if (await this.probe(this.endpoint)) return { launched: true, detail: `CDP 浏览器已就绪（${this.endpoint}）` }
+      if (await this.probe(this.endpointValue)) return { launched: true, detail: `CDP 浏览器已就绪（${this.endpointValue}）` }
       await new Promise(resolve => setTimeout(resolve, 400))
     }
     await this.stop()
     return {
       launched: false,
-      detail: `CDP 浏览器启动超时：${this.endpoint} 无响应。请确认可执行文件路径正确，且该 profile 未被其他浏览器占用。`,
+      detail: `CDP 浏览器启动超时：${this.endpointValue} 无响应。请确认可执行文件路径正确，且该 profile 未被其他浏览器占用。`,
     }
   }
 
   /** Whether the spawned process lives and its endpoint answers. */
   async status(): Promise<LauncherStatus> {
-    return { running: this.child !== undefined && this.child.exitCode === null, endpointUp: await this.probe(this.endpoint) }
+    return { running: this.child !== undefined && this.child.exitCode === null, endpointUp: await this.probe(this.endpointValue) }
   }
 
   /** Kill the process this row spawned (never an externally started browser). */
