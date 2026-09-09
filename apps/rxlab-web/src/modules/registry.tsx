@@ -78,10 +78,14 @@ export const MODULES: readonly ModuleDefinition[] = [
     label: '验光配镜',
     tagline: '验光数据录入、处方计算、适配建议',
     description:
-      '验光配镜模块：录入验光单（球镜/柱镜/轴位等），结合商品 Wiki 与适配规则计算处方与镜架适配建议。',
-    scope: ['验光单录入', '处方计算', '镜架适配建议'],
+      '验光配镜模块：按验光流程录入分阶段验光记录（问诊/客观/主觉/试戴/瞳距等，rxlab_fitting 持久域，经 rxlabFitting Remote 直连读写），由确定性推导引擎计算处方并给出折射率、镜片类型、镜架尺寸带与无框可行性建议。',
+    scope: [
+      '分阶段验光记录的录入、检索与删除',
+      '处方计算（球柱轴/ADD/瞳距）与过程校验提示',
+      '折射率 / 镜片类型 / 镜架尺寸带建议与 Wiki 镜架匹配',
+    ],
     icon: Glasses,
-    status: 'planned',
+    status: 'active',
     panel: fittingPanel,
   },
   {

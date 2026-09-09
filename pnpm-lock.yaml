@@ -636,6 +636,9 @@ importers:
       '@deepseek-ai/dsh-rxlab-collect':
         specifier: workspace:^
         version: link:../../packages/api/rxlab-collect
+      '@deepseek-ai/dsh-rxlab-fitting':
+        specifier: workspace:^
+        version: link:../../packages/api/rxlab-fitting
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../packages/core/session
@@ -1167,6 +1170,31 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+
+  packages/api/rxlab-fitting:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../gateway
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol
@@ -2016,6 +2044,9 @@ importers:
       '@deepseek-ai/dsh-rxlab-collect':
         specifier: workspace:^
         version: link:../../api/rxlab-collect
+      '@deepseek-ai/dsh-rxlab-fitting':
+        specifier: workspace:^
+        version: link:../../api/rxlab-fitting
       '@deepseek-ai/dsh-rxlab-web-frontend':
         specifier: workspace:^
         version: link:../../../apps/rxlab-web
