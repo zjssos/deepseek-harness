@@ -5,6 +5,7 @@ import {
   Bot,
   Glasses,
   Image,
+  Settings,
   ShoppingCart,
   Workflow,
 } from 'lucide-react'
@@ -18,6 +19,7 @@ const fittingPanel = lazy(() => import('./fitting/Panel'))
 const recommendPanel = lazy(() => import('./recommend/Panel'))
 const renderPanel = lazy(() => import('./render/Panel'))
 const flowPanel = lazy(() => import('./flow/Panel'))
+const settingsPanel = lazy(() => import('./settings/Panel'))
 
 /**
  * Workbench module manifest. A module becomes usable by swapping its lazy
@@ -114,6 +116,20 @@ export const MODULES: readonly ModuleDefinition[] = [
     icon: Workflow,
     status: 'planned',
     panel: flowPanel,
+  },
+  {
+    id: 'settings',
+    label: '全局设置',
+    tagline: '各模块设置与 Agent 预设管理',
+    description:
+      '全局设置模块：读取 settings-rxlab.yaml 的各模块分区（模型、Web 搜索/抓取等）并提供标量编辑，同时管理 Agent 预设目录（列表、默认、复制、删除）。',
+    scope: [
+      '各模块 settings 分区查看与编辑（即时生效 / 需重启）',
+      'Agent 预设列表、设为默认、复制、删除',
+    ],
+    icon: Settings,
+    status: 'active',
+    panel: settingsPanel,
   },
 ]
 

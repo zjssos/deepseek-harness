@@ -127,6 +127,16 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # Exposes the `agentPresets` Remote namespace for the SPA's preset
+    # management surface (roster list/read/copy/delete + the `agent-presets`
+    # settings default). Sessions keep composing over the base process-wide
+    # agent plane — this roster is a management surface, not the per-session
+    # mount the web profile uses.
+    - id: agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: standard
+
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
 
