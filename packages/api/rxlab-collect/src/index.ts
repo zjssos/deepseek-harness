@@ -181,8 +181,13 @@ export class CollectController extends TypertRemoteService {
   }
 
   private async getBrowser(): Promise<Browser> {
-    const pending = this.browserPromise
-    if (pending !== undefined) return pending
+    if (this.browserPromise !== undefined) {
+      const existing = await this.browserPromise.catch(() => undefined)
+      if (existing !== undefined && existing.isConnected()) return existing
+      // The shared browser died (closed/crashed/stopped between items); relaunch
+      // so the rest of the batch does not fail on a dead handle.
+      this.browserPromise = undefined
+    }
     const created = this.launchChromium()
     this.browserPromise = created
     created.catch(() => { if (this.browserPromise === created) this.browserPromise = undefined })
