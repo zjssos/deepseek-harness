@@ -2,10 +2,12 @@
  * Taobao/Tmall deterministic collector: anonymous headless capture of one
  * item.taobao.com (or tmall item) product page — title, main image, and the
  * first displayed price — intended as a working alternative when a platform
- * (e.g. JD) risk-blocks the anonymous session. Capture is deliberately leaner
- * than JD's (no share-link or spec table): Taobao's anonymous page exposes
- * title/price/image reliably, while login-gated or risk pages fail fast with a
- * readable error.
+ * (e.g. JD) risk-blocks the anonymous session. The page is read with a desktop
+ * UA: Taobao answers mobile user agents with a phone-login screen even though
+ * the same product renders publicly on desktop, so a mobile UA never reaches
+ * the goods. Capture is deliberately leaner than JD's (no share-link or spec
+ * table): Taobao's public page exposes title/price/image reliably, while
+ * login-gated or risk pages fail fast with a readable error.
  * @module @deepseek-ai/dsh-rxlab-collect/src/executor/taobao
  */
 
@@ -14,8 +16,8 @@ import type { CollectPrice } from '../types.ts'
 import { cleanTaobaoTitle, taobaoItemUrl } from './parse.ts'
 import type { Collector, CollectorResult } from './types.ts'
 
-const MOBILE_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+const DESKTOP_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -39,18 +41,18 @@ export function createTaobaoCollector(browser: () => Promise<Browser>): Collecto
       }
       const shared = await browser()
       const context = await shared.newContext({
-        userAgent: MOBILE_UA,
+        userAgent: DESKTOP_UA,
         locale: 'zh-CN',
-        viewport: { width: 414, height: 896 },
+        viewport: { width: 1440, height: 900 },
       })
       const page = await context.newPage()
       try {
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
         const httpOk = response !== null && response.status() < 400
-        await wait(2600)
+        await wait(3000)
         const state = await page.evaluate(() => {
           const head = document.body.innerText.slice(0, 800)
-          const gate = /请登录|扫码登录|验证|滑块|访问频繁|操作频繁|安全校验/.test(head)
+          const gate = /请登录|扫码登录|手机登录|验证|滑块|访问频繁|操作频繁|安全校验/.test(head)
           const priceMatch = document.body.innerText.match(/¥\s*\d{1,8}(?:\.\d{1,2})?/)
           const mainImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content') ?? ''
           return {
