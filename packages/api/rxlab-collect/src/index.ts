@@ -194,7 +194,7 @@ export class CollectController extends TypertRemoteService {
     return created
   }
 
-  /** Launch headless chromium, or attach to the CDP browser the person opened from the settings UI. */
+  /** Launch headless chromium, or attach to a CDP browser when the namespace is in cdp mode. */
   private async launchChromium(): Promise<Browser> {
     let browserSettings: { launchMode?: string; cdpEndpoint?: string } | undefined
     try {
@@ -204,25 +204,18 @@ export class CollectController extends TypertRemoteService {
     } catch {
       browserSettings = undefined
     }
-    const launcher = this.ctx.get('collectCdpLauncher') as
-      | { endpoint: string; status(): Promise<{ running: boolean; endpointUp: boolean }> }
-      | undefined
-    const launcherUp = launcher === undefined ? false : (await launcher.status()).endpointUp
-    // Capture reuses whichever real CDP browser is reachable: the launcher the
-    // person opened from settings (endpointUp), or a browser configured via the
-    // namespace's cdp mode. Only when neither exists does the collector fall
-    // back to its own anonymous headless chromium — never a second window.
-    const nsCdp = browserSettings?.launchMode === 'cdp'
-    const endpoint = nsCdp
-      ? (browserSettings?.cdpEndpoint ?? 'http://127.0.0.1:9222')
-      : launcher?.endpoint ?? 'http://127.0.0.1:9222'
-    if (nsCdp || launcherUp) {
+    // Capture stays on its own anonymous headless chromium (no window) unless
+    // the person explicitly set cdp mode. Opening the CDP browser from the
+    // settings is for agent/manual browsing; silently hijacking every capture
+    // onto it made each item open a new window over CDP.
+    if (browserSettings?.launchMode === 'cdp') {
+      const endpoint = browserSettings.cdpEndpoint ?? 'http://127.0.0.1:9222'
       try {
         return await chromium.connectOverCDP(endpoint)
       } catch (cause) {
         const detail = cause instanceof Error ? cause.message : String(cause)
         throw new Error(
-          `CDP 捕获浏览器未就绪:${endpoint} 无响应(${detail})。请先在采集模块设置中「打开 CDP 浏览器」,再运行采集批次。`,
+          `CDP 捕获浏览器未就绪:${endpoint} 无响应(${detail})。请先启动 --remote-debugging-port 的真实浏览器并确认端点可达,再运行采集批次。`,
         )
       }
     }

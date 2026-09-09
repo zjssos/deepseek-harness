@@ -107,7 +107,7 @@ export const collectBrowserDescriptor: NamespaceDescriptor = {
       label: '浏览器模式',
       control: 'select',
       options: LAUNCH_MODE_OPTIONS,
-      help: '采集:未打开 CDP 浏览器时用自带无头 chromium;点「打开 CDP 浏览器」后采集自动复用该浏览器、不再另开。CDP 模式让采集与 agent 浏览都连 cdpEndpoint。浏览器模式的变更对 agent 浏览工具需重启生效。',
+      help: '采集默认用自带无头 chromium(不弹窗);设为 CDP 后采集才 attach 到 cdpEndpoint 的真实浏览器。「打开 CDP 浏览器」用于 agent 浏览与人工登录,不会让采集自动切过去。浏览器模式变更对 agent 浏览工具需重启生效。',
     },
     cdpEndpoint: {
       label: 'CDP 端点',
