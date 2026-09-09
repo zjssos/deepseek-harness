@@ -148,6 +148,30 @@
     - id: rxlab-collect
       name: '@deepseek-ai/dsh-rxlab-collect'
 
+    # Host-plane login-capable chromium (`ctx.collectBrowser`) behind the
+    # collect agent's browser-use tools: one instance and one login profile
+    # per host, so concurrent collect sessions share the profile instead of
+    # racing Playwright's per-directory process lock. `dsh rxlab --cdp` flips
+    # it from the owned persistent profile to attaching to a real browser over
+    # Chrome DevTools Protocol (endpoint defaults to http://127.0.0.1:9222 in
+    # the session service). The tools row that consumes it is per-session (the
+    # shipped `collect` preset).
+    - id: rxlab-collect-browser
+      name: '@deepseek-ai/dsh-rxlab-collect/browser'
+      inject: [rxlabStartup]
+      config:
+        launchMode: !!js "(ctx.rxlabStartup.cdp ? 'cdp' : 'persistent')"
+
+    # The per-session agent preset roster (shipped presets bundled inside the
+    # package as a read-only system root, locally authored presets under
+    # $DSH_HOME/.agent-presets). The rxlab SPA composes sessions on a preset
+    # through the session-create wire's agentPreset field; the workbench
+    # default keeps the base process-wide composition.
+    - id: agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: standard
+
     # ── headless client data-layer runtime for the standalone SPA ──────────────
     # The rxlab SPA embeds the Cordis client DATA layer without the browser UI
     # roster: this row makes the modules node half compose window.__DSH_BOOT__

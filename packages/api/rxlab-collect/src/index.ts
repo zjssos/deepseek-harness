@@ -40,6 +40,8 @@ import type {
   CollectCaptureId,
   CollectCaptureListRequest,
   CollectCaptureListValue,
+  CollectDiscoveredLink,
+  CollectDiscoveredSubmitValue,
   CollectLink,
   CollectLinkGetRequest,
   CollectLinkGetValue,
@@ -313,6 +315,49 @@ export class CollectController extends TypertRemoteService {
       }
     }
     return { created, updated, rejected }
+  }
+
+  /**
+   * Submit links the collect agent discovered by browsing (browser use):
+   * every entry is validated independently like CSV import, the platform is
+   * guessed from the url when absent, and accepted entries upsert with the
+   * usual platform+canonical-url merge. Host-internal: the agent tools call
+   * this directly; it registers no Remote method.
+   * @param links - discovered link drafts in submission order.
+   * @returns created/merged links and per-entry rejections.
+   */
+  async submitDiscovered(links: readonly CollectDiscoveredLink[]): Promise<CollectDiscoveredSubmitValue> {
+    const created: CollectLink[] = []
+    const merged: CollectLink[] = []
+    const rejected: { link: CollectDiscoveredLink; reason: string }[] = []
+    for (const link of links) {
+      const platform = link.platform ?? platformFromUrl(link.url)
+      if (platform === undefined) {
+        rejected.push({ link, reason: `无法推断平台: ${link.url}` })
+        continue
+      }
+      const parsed = collectLinkDraftSchema.safeParse({
+        ...link,
+        platform,
+      })
+      if (!parsed.success) {
+        rejected.push({
+          link,
+          reason: parsed.error.issues
+            .map(issue => `${issue.path.join('.') || 'link'}: ${issue.message}`)
+            .join('; ')
+            .slice(0, 400),
+        })
+        continue
+      }
+      try {
+        const stored = await this.upsertOne(parsed.data)
+        ;(stored.merged ? merged : created).push(stored.link)
+      } catch (cause) {
+        rejected.push({ link, reason: readableError(cause).slice(0, 400) })
+      }
+    }
+    return { created, merged, rejected }
   }
 
   /**

@@ -83,6 +83,27 @@ export interface CollectLinkDraft {
   readonly id?: CollectLinkId | undefined
 }
 
+/**
+ * One link found by the collect agent's browser discovery. The platform may
+ * be omitted: the host guesses it from the url and rejects what it cannot
+ * place.
+ */
+export interface CollectDiscoveredLink {
+  readonly url: string
+  readonly platform?: CollectPlatform | undefined
+  readonly shopId?: string | undefined
+  readonly shopName?: string | undefined
+  readonly sku?: string | undefined
+  readonly titleAtAdd?: string | undefined
+}
+
+/** Result of one agent discovery submission (same receipt shape as CSV import). */
+export interface CollectDiscoveredSubmitValue {
+  readonly created: readonly CollectLink[]
+  readonly merged: readonly CollectLink[]
+  readonly rejected: readonly { readonly link: CollectDiscoveredLink; readonly reason: string }[]
+}
+
 /** The deterministic fields one collector run can capture. */
 export interface CollectCaptureFields {
   /** Cleaned listing title read from the product page. */

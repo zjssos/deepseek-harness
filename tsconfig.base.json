@@ -131,6 +131,8 @@
       "@deepseek-ai/dsh-headless/startup": ["./packages/bundle/headless/src/startup.ts"],
       "@deepseek-ai/dsh-web-app/startup": ["./packages/bundle/web-app/src/startup.ts"],
       "@deepseek-ai/dsh-rxlab-app/startup": ["./packages/bundle/rxlab-app/src/startup.ts"],
+      "@deepseek-ai/dsh-rxlab-collect/browser": ["./packages/api/rxlab-collect/src/browser.ts"],
+      "@deepseek-ai/dsh-rxlab-collect/tools": ["./packages/api/rxlab-collect/src/tools.ts"],
       "@deepseek-ai/dsh-client-*/client": ["./packages/client/*/src/client"],
       // One wildcard maps every @deepseek-ai/dsh-<name> to its source. Package
       // dir names are unique across groups, so first-on-disk-wins resolution is
@@ -335,6 +337,8 @@
       "@deepseek-ai/dsh-pwsh-sandbox": ["./packages/shell/pwsh-sandbox/src"],
       "@deepseek-ai/dsh-repeat-tool-reminder": ["./packages/guard/repeat-tool-reminder/src"],
       "@deepseek-ai/dsh-rxlab-app": ["./packages/bundle/rxlab-app/src"],
+      "@deepseek-ai/dsh-rxlab-catalog": ["./packages/api/rxlab-catalog/src"],
+      "@deepseek-ai/dsh-rxlab-collect": ["./packages/api/rxlab-collect/src"],
       "@deepseek-ai/dsh-sandbox": ["./packages/sandbox/sandbox/src"],
       "@deepseek-ai/dsh-sandbox-local": ["./packages/sandbox/sandbox-local/src"],
       "@deepseek-ai/dsh-sandbox-policy": ["./packages/sandbox/sandbox-policy/src"],

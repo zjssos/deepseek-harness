@@ -12,12 +12,14 @@ import type {
   SessionListState,
   SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the generated `remote.session`/`remote.workspace` and
 // `remote.credentials` namespace declarations into the ClientRemote type.
 import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
+import type {} from '@deepseek-ai/dsh-agent-presets/remote'
 
 /**
  * React adapters over the embedded Cordis client data layer. rxlab-web is a
@@ -74,6 +76,47 @@ export function useSessionList(runtime: RxlabClientRuntime | undefined): Session
   return useSyncExternalStore(subscribe, getSnapshot)
 }
 
+/** Agent preset roster state the session picker renders. */
+export interface AgentPresetRosterState {
+  /** Roster read outcome: loading, loaded, or failed. */
+  readonly status: 'loading' | 'ok' | 'error'
+  /** Shown rows (composeable presets first-come order, broken kept for display). */
+  readonly presets: readonly AgentPresetRow[]
+  /** Read failure message when the roster could not be listed. */
+  readonly error?: string
+}
+
+const EMPTY_ROSTER: AgentPresetRosterState = { status: 'loading', presets: [] }
+
+/**
+ * Read the Host agent-preset roster once per connection. A deployment that
+ * composes no presets (agentPresets row absent) reports an empty roster via
+ * the optional-namespace contract; a read failure surfaces its message so
+ * the picker can show why presets are missing.
+ */
+export function useAgentPresets(runtime: RxlabClientRuntime | undefined, connected: boolean): AgentPresetRosterState {
+  const [state, setState] = useState<AgentPresetRosterState>(EMPTY_ROSTER)
+  useEffect(() => {
+    if (!connected || runtime === undefined) return
+    let alive = true
+    setState(EMPTY_ROSTER)
+    runtime.remote.agentPresets.list()
+      .then((result) => {
+        if (!alive) return
+        if (result.ok) {
+          setState({ status: 'ok', presets: result.value.presets })
+        } else {
+          setState({ status: 'error', presets: [], error: `${result.error.code}: ${result.error.message}` })
+        }
+      })
+      .catch((cause: unknown) => {
+        if (alive) setState({ status: 'error', presets: [], error: cause instanceof Error ? cause.message : String(cause) })
+      })
+    return () => { alive = false }
+  }, [runtime, connected])
+  return state
+}
+
 /** Refresh/current/open/create/clear/archive/fork helpers bound to one runtime. */
 export function useSessionActions(runtime: RxlabClientRuntime | undefined): SessionActions {
   return useMemo<SessionActions>(() => {
@@ -89,8 +132,10 @@ export function useSessionActions(runtime: RxlabClientRuntime | undefined): Sess
     }
     return {
       refresh: async () => { await runtime.sessions.refresh() },
-      create: async () => {
-        const id = await runtime.sessions.create({})
+      create: async (opts) => {
+        const id = await runtime.sessions.create(
+          opts?.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset },
+        )
         runtime.sessions.open(id)
         return id
       },
@@ -118,8 +163,8 @@ export function useSessionActions(runtime: RxlabClientRuntime | undefined): Sess
 export interface SessionActions {
   /** Re-pull the Host session list. */
   readonly refresh: () => Promise<void>
-  /** Create and open a blank session. */
-  readonly create: () => Promise<string | undefined>
+  /** Create and open a blank session, optionally composed from an Agent preset. */
+  readonly create: (opts?: { readonly agentPreset?: string }) => Promise<string | undefined>
   /** Select one listed session as current. */
   readonly open: (id: SessionId) => void
   /** Clear the current selection back to the no-session view. */

@@ -30,12 +30,13 @@ rxlab = 「`dsh-base` 完整 Cordis host + `rxlab-app` bundle(patch 层)」组�
 - **persona**:`system-prompt` 行整行覆盖 base——眼镜/验光语境 persona,并声明「商品 Wiki 等已接,其余业务模块(采集、验光配镜…)未接时不虚构工具」。
 - **数据隔离行**(覆盖 base):`settings → dshHomePath('settings-rxlab.yaml')`、`session-persistence-jsonl → sessions-rxlab`、`storage-json → storages-rxlab`。凭据(`.credentials.yaml`)保持共享,模型可用;attachment 走共享默认直到业务域自管。
 - **insert 行**(职责表):
-  - `rxlab-startup`(`@deepseek-ai/dsh-rxlab-app/startup`):cmdlineArgs 的 commander 解析(`--host/--port/--trusted-host/--no-open`,拒绝 `--host 0.0.0.0`),提供普通服务 `rxlabStartup`。
+  - `rxlab-startup`(`@deepseek-ai/dsh-rxlab-app/startup`):cmdlineArgs 的 commander 解析(`--host/--port/--trusted-host/--no-open/--cdp`,拒绝 `--host 0.0.0.0`),提供普通服务 `rxlabStartup`;`--cdp` 让采集 agent 的浏览会话接管真实浏览器(见下),未开浏览器时由服务在首次使用时给出启动指引。
   - `webserver`:注入 `rxlabStartup`,`host/port` 取 flag,兜底 `127.0.0.1:3081`(避开 web 的 3080)。
   - `rxlab-runtime`(bundle 本体 `@deepseek-ai/dsh-rxlab-app`):resolve 前端包 dist → 运行时 mount `FrontendStatic` fallback(无独立 patch 行);注册 `app:rxlab-surface` prompt 段与 `DSH_RXLAB_URL` bash 变量;打印 `dsh rxlab: …` URL、按 `openBrowser` 开浏览器;bind 后提供 `rxlabRuntime`(trustedHosts 等)给信任围栏。
   - `connection`:浏览器认证半层(/api RPC 网关 carrier;由进程 token 铸 cookie,frontend-static 每次 index 渲染校验)+ 注入 `rxlabRuntime` 的 /api 信任围栏。
   - **会话 Remote 面**:`workspace`、`file-upload`、`session-controller`、`api-remotes`、`settings-controller`、`workspace-controller` —— 把 base 已含的 typert 网关/会话日志/工作区服务暴露成 /api Remote,供 SPA 调用,并把 api-session/* 事件推到浏览器 `$events` 流。
   - **业务域行**:`rxlab-catalog`(`@deepseek-ai/dsh-rxlab-catalog`,rxlab_catalog storage 域)、`rxlab-collect`(`@deepseek-ai/dsh-rxlab-collect`,rxlab_collect 域)——都是 dsh.client 行,自带包内 /client bundle,业务域不进平台 api-remotes。
+  - `rxlab-collect-browser`(`@deepseek-ai/dsh-rxlab-collect/browser`):host 层持登录态 chromium 的会话(`ctx.collectBrowser`),供内置 `collect` agent preset 的浏览工具消费;`launchMode` 取自 `rxlabStartup`,`--cdp` 时接管真实浏览器。collect agent 界面的工具行/preset/persona 机制见标准 Agent Note 与 `rxlab-collect` 包 README。
   - `modules`(`@deepseek-ai/dsh-client-modules`):为所有激活的 dsh.client 行 compose `window.__DSH_BOOT__` 并 serve `/plugins/<id>/client.js` —— SPA headless 数据层由此拿到运行时。
 
 **机制要点**:patch 整行替换→行注释强调「restates every key it owns」;inject 表达式按服务依赖延迟解析(rxlab-startup 先于引用它的行);`dsh --profile rxlab --help` 两服务都不建 → 不 bind server;base 的 host 插件树(agent-loop/工具/会话日志/typert 等)不因 rxlab 改动,全部走原可配置替换机制。

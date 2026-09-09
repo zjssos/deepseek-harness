@@ -15,12 +15,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export interface SessionSidebarProps {
@@ -30,7 +32,11 @@ export interface SessionSidebarProps {
   readonly archivedIds: readonly SessionId[]
   readonly connected: boolean
   readonly creating: boolean
-  readonly onCreate: () => void
+  /** Host agent-preset roster rows for the create picker (empty when none). */
+  readonly presets: readonly AgentPresetRow[]
+  /** Whether the roster read finished; while loading only the default item shows. */
+  readonly presetsReady: boolean
+  readonly onCreate: (opts?: { readonly agentPreset?: string }) => void
   readonly onOpen: (id: SessionId) => void
   /** Rename one listed session; resolves undefined when the host rejected it. */
   readonly onRename: (id: SessionId, title: string) => Promise<string | undefined>
@@ -46,6 +52,8 @@ export function SessionSidebar({
   archivedIds,
   connected,
   creating,
+  presets,
+  presetsReady,
   onCreate,
   onOpen,
   onRename,
@@ -87,16 +95,43 @@ export function SessionSidebar({
             ? <Badge variant="secondary" className="text-[10px]">已连接</Badge>
             : <Badge variant="outline" className="text-[10px]">连接中</Badge>}
         </div>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-7"
-          onClick={onCreate}
-          disabled={!connected || creating}
-          aria-label="新建会话"
-        >
-          {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              disabled={!connected || creating}
+              aria-label="新建会话"
+            >
+              {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => { onCreate() }}>
+              <Plus className="size-4" />
+              默认会话
+            </DropdownMenuItem>
+            {presetsReady && presets.length > 0
+              ? (
+                <>
+                  <DropdownMenuSeparator />
+                  {presets.map(preset => (
+                    <DropdownMenuItem
+                      key={preset.id}
+                      disabled={preset.broken !== undefined}
+                      title={preset.description ?? preset.id}
+                      onClick={() => { onCreate({ agentPreset: preset.id }) }}
+                    >
+                      <Plus className="size-4" />
+                      {preset.name ?? preset.id}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )
+              : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <Separator />
       <ScrollArea className="min-h-0 flex-1">

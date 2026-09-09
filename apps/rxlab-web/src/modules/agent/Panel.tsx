@@ -16,6 +16,7 @@ import { foldTranscript } from './transcript'
 import { useArchivedSessions } from './use-archived-sessions'
 import { useModelCatalog } from './use-model-catalog'
 import {
+  useAgentPresets,
   useConnected,
   useRxlabClient,
   useSessionActions,
@@ -46,6 +47,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const view = useSessionView(runtime, list)
   const modelState = useModelCatalog(runtime, connected)
   const archived = useArchivedSessions(runtime, connected)
+  const presetRoster = useAgentPresets(runtime, connected)
   const [creating, setCreating] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
@@ -60,12 +62,12 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
     ? undefined
     : list.byId[view.sessionId]?.displayTitle
 
-  const onCreate = async (): Promise<void> => {
+  const onCreate = async (opts?: { readonly agentPreset?: string }): Promise<void> => {
     setCreating(true)
     setBanner(null)
     try {
-      const id = await actions.create()
-      if (id === undefined) setBanner('新建会话未完成')
+      const id = await actions.create(opts)
+      if (id === undefined) setBanner('新建会话未返回')
     } catch (cause) {
       setBanner(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -109,7 +111,9 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
         connected={connected}
         creating={creating}
         archiving={archiving}
-        onCreate={() => { void onCreate() }}
+        presets={presetRoster.presets}
+        presetsReady={presetRoster.status === 'ok'}
+        onCreate={(opts) => { void onCreate(opts) }}
         onOpen={actions.open}
         onRename={onRename}
         onArchive={onArchive}
