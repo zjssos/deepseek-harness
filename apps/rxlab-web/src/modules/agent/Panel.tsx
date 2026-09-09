@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ModulePanelProps } from '@/modules/types'
+import { useWorkspaceRoot } from '@/modules/settings/use-settings'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RxlabClientRuntime } from './client'
 import { Composer } from './Composer'
@@ -39,6 +40,25 @@ function BootSkeleton() {
   )
 }
 
+/**
+ * Workspace subdirectory each module agent preset runs in. Keyed by preset id
+ * because the workbench composes module agents as presets; a preset without
+ * an entry, and preset-less sessions, run at the workspace root.
+ */
+const MODULE_SESSION_SUBDIRS: Record<string, string> = {
+  collect: 'collect',
+}
+
+/**
+ * The session cwd for one creation request: the module subdirectory, the
+ * workspace root, or undefined (host default) when the workspace is unknown.
+ */
+function sessionCwd(workspaceRoot: string | undefined, agentPreset: string | undefined): string | undefined {
+  if (workspaceRoot === undefined) return undefined
+  const subdir = agentPreset === undefined ? undefined : MODULE_SESSION_SUBDIRS[agentPreset]
+  return subdir === undefined ? workspaceRoot : `${workspaceRoot}/${subdir}`
+}
+
 /** The three-pane conversation workbench over one ready headless runtime. */
 function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const list = useSessionList(runtime)
@@ -48,6 +68,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const modelState = useModelCatalog(runtime, connected)
   const archived = useArchivedSessions(runtime, connected)
   const presetRoster = useAgentPresets(runtime, connected)
+  const workspaceRoot = useWorkspaceRoot(runtime, connected)
   const [creating, setCreating] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
@@ -66,7 +87,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
     setCreating(true)
     setBanner(null)
     try {
-      const id = await actions.create(opts)
+      const id = await actions.create({ ...opts, cwd: sessionCwd(workspaceRoot, opts?.agentPreset) })
       if (id === undefined) setBanner('新建会话未返回')
     } catch (cause) {
       setBanner(cause instanceof Error ? cause.message : String(cause))

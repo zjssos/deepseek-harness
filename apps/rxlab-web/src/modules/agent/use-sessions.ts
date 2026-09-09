@@ -133,9 +133,11 @@ export function useSessionActions(runtime: RxlabClientRuntime | undefined): Sess
     return {
       refresh: async () => { await runtime.sessions.refresh() },
       create: async (opts) => {
-        const id = await runtime.sessions.create(
-          opts?.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset },
-        )
+        const request = {
+          ...(opts?.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset }),
+          ...(opts?.cwd === undefined ? {} : { cwd: opts.cwd }),
+        }
+        const id = await runtime.sessions.create(request)
         runtime.sessions.open(id)
         return id
       },
@@ -163,8 +165,8 @@ export function useSessionActions(runtime: RxlabClientRuntime | undefined): Sess
 export interface SessionActions {
   /** Re-pull the Host session list. */
   readonly refresh: () => Promise<void>
-  /** Create and open a blank session, optionally composed from an Agent preset. */
-  readonly create: (opts?: { readonly agentPreset?: string }) => Promise<string | undefined>
+  /** Create and open a session, optionally composed from an Agent preset and rooted at a workspace directory. */
+  readonly create: (opts?: { readonly agentPreset?: string; readonly cwd?: string }) => Promise<string | undefined>
   /** Select one listed session as current. */
   readonly open: (id: SessionId) => void
   /** Clear the current selection back to the no-session view. */

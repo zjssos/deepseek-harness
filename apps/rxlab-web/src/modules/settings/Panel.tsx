@@ -23,7 +23,7 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets'
+import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets/types'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ModulePanelProps } from '@/modules/types'
@@ -40,6 +40,7 @@ const NAMESPACE_LABELS: Record<string, string> = {
   'agent-presets': 'Agent 预设',
   'web': 'Web 搜索 / 抓取',
   'permission-presets': '权限预设',
+  'rxlab-workspace': '工作台工作空间',
 }
 
 function namespaceLabel(ns: string): string {

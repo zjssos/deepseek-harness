@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-rxlab-preset-management-surface.md
-2026-09-09-rxlab-preset-management-surface.md: 05ac4162d5e64db73bb1207e510aae100f030181
-2026-09-09-rxlab-preset-management-surface.zh.md: 0ee15f55d7077e91a8d6c8b3e93552619aebec0e
+2026-09-09-rxlab-preset-management-surface.md: 041b7633c17f95ce3e0ea2b94263866458152de4
+2026-09-09-rxlab-preset-management-surface.zh.md: 935f7b8a895a25202be2fe59f7ec9a04beaa82c9
