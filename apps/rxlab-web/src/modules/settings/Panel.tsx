@@ -30,14 +30,15 @@ import type { ModulePanelProps } from '@/modules/types'
 import { MODULES } from '@/modules/registry'
 import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
 import type { RxlabClientRuntime } from '@/rxlab/client'
-import { AgentSettingsSection } from '@/rxlab/settings-form/AgentSettingsSection'
+import { SettingsSection } from '@/rxlab/settings-form/AgentSettingsSection'
 import { WorkspaceInfoBlock } from '@/rxlab/settings-form/WorkspaceInfoBlock'
 import {
   AGENT_PRESETS_NAMESPACE, copyPreset, deletePreset, setDefaultPreset,
   updateNamespace, unsetNamespaceField, useModuleAgents, usePresetRoster,
   useSettingsDescribe, useWorkspaceRoot,
 } from '@/rxlab/use-settings'
-import { MODULE_NAMESPACE_SECTIONS } from './module-settings'
+import { MODULE_NAMESPACE_SECTIONS, namespaceSectionsOf } from './module-settings'
+import { CdpSettings } from '@/modules/collect/CdpSettings'
 
 const NAMESPACE_LABELS: Record<string, string> = {
   'llm-deepseek': 'DeepSeek 模型',
@@ -274,8 +275,15 @@ function ModuleSettingsTab({
                   { label: '模块范围', value: `${module.scope.length} 项` },
                 ]}
               />
-              {module.id === 'agent'
-                ? <AgentSettingsSection runtime={runtime} connected={connected} />
+              {module.id === 'collect' ? <CdpSettings runtime={runtime} connected={connected} /> : null}
+              {namespaceSectionsOf(module.id).length > 0
+                ? (
+                  <SettingsSection
+                    runtime={runtime}
+                    connected={connected}
+                    descriptors={namespaceSectionsOf(module.id)}
+                  />
+                )
                 : (
                   <p className="text-xs text-muted-foreground">
                     {active

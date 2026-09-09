@@ -1,11 +1,11 @@
 /**
- * AgentSettingsSection: the shared module-default settings surface for the
- * agent workbench — the deployment namespaces that govern every session
- * (`llm-deepseek` provider knobs + `agent-default-model`). One seat lives in
- * the agent module's settings dialog, the other in the settings hub's agent
- * section; both render this same component so the two never drift. Edits apply
- * at module-default level: no per-session override channel exists yet. zh copy
- * until the app gains a locale dictionary.
+ * SettingsSection: the shared descriptor-driven settings surface for one
+ * workbench module. Given a list of namespace descriptors it renders each as a
+ * titled SchemaForm group with its applies badge, plus one loading/error/read-
+ * only toolbar. The agent module's dialog and the settings hub both use it so
+ * seats never drift. Edits apply at module-default level: no per-session
+ * override channel exists yet. zh copy until the app gains a locale
+ * dictionary.
  */
 import { useMemo, useState } from 'react'
 import { CircleAlert, RefreshCw } from 'lucide-react'
@@ -25,13 +25,19 @@ const AGENT_NAMESPACE_DESCRIPTORS: readonly NamespaceDescriptor[] = [
   agentDefaultModelDescriptor,
 ]
 
-export interface AgentSettingsSectionProps {
+export interface SettingsSectionProps {
   readonly runtime: RxlabClientRuntime
   readonly connected: boolean
+  /** Namespace sections to render; defaults to the agent module's model namespaces. */
+  readonly descriptors?: readonly NamespaceDescriptor[]
+  /** One-line zh toolbar copy describing the surface's effect. */
+  readonly note?: string
 }
 
-/** Module-default model/thinking settings for agent sessions, both seats. */
-export function AgentSettingsSection({ runtime, connected }: AgentSettingsSectionProps) {
+/** Module-default settings sections (agent model namespaces unless overridden). */
+export function SettingsSection({
+  runtime, connected, descriptors = AGENT_NAMESPACE_DESCRIPTORS, note,
+}: SettingsSectionProps) {
   const { state, reload } = useSettingsDescribe(runtime, connected)
   const [savedViews, setSavedViews] = useState<ReadonlyMap<string, SettingsNamespaceView>>(new Map())
 
@@ -64,14 +70,14 @@ export function AgentSettingsSection({ runtime, connected }: AgentSettingsSectio
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {state.value.writable
-            ? '编辑会话模块默认：模型、思考与上下文设置写入 settings-rxlab.yaml，新建/后续请求即生效。'
+            ? (note ?? '编辑写入 settings-rxlab.yaml；需重启的分区在下一次启动生效。')
             : '当前部署为只读，无法保存修改。'}
         </p>
         <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" onClick={reload}>
           <RefreshCw className="size-3.5" />
         </Button>
       </div>
-      {AGENT_NAMESPACE_DESCRIPTORS.map((descriptor) => {
+      {descriptors.map((descriptor) => {
         const view = viewsByNamespace.get(descriptor.ns)
         if (view === undefined) {
           return (
@@ -94,4 +100,9 @@ export function AgentSettingsSection({ runtime, connected }: AgentSettingsSectio
       })}
     </div>
   )
+}
+
+/** Back-compat name: the agent module's default namespace sections. */
+export function AgentSettingsSection(props: SettingsSectionProps) {
+  return <SettingsSection {...props} />
 }

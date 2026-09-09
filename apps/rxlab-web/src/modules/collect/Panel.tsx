@@ -45,6 +45,9 @@ import type {
 import type { CatalogImportRequest } from '@deepseek-ai/dsh-rxlab-catalog/types'
 import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
 import type { RxlabClientRuntime } from '@/rxlab/client'
+import { useModuleAgents } from '@/rxlab/use-settings'
+import { moduleById } from '@/modules/registry'
+import { ModuleAgentSurface } from '@/rxlab/module-agent/ModuleAgentSurface'
 import { catalogImportCollected } from '@/modules/wiki/use-catalog'
 import {
   createBatch,
@@ -119,8 +122,9 @@ export default function CollectPanel(_props: ModulePanelProps) {
 
 function CollectWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const connected = useConnected(runtime)
+  const moduleAgents = useModuleAgents(runtime, connected)
   const [banner, setBanner] = useState<string | null>(null)
-  const [tab, setTab] = useState<'links' | 'batches'>('links')
+  const [tab, setTab] = useState<'links' | 'batches' | 'agent'>('links')
   const [focusBatch, setFocusBatch] = useState<CollectBatchId | undefined>(undefined)
 
   const notify = useCallback((message: string) => { setBanner(message) }, [])
@@ -148,16 +152,24 @@ function CollectWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
           </CardContent>
         </Card>
       )}
-      <Tabs value={tab} onValueChange={(value) => { setTab(value as 'links' | 'batches') }}>
+      <Tabs value={tab} onValueChange={(value) => { setTab(value as 'links' | 'batches' | 'agent') }}>
         <TabsList>
           <TabsTrigger value="links">商品链接</TabsTrigger>
           <TabsTrigger value="batches">采集批次</TabsTrigger>
+          <TabsTrigger value="agent">采集助手</TabsTrigger>
         </TabsList>
         {tab === 'links' && (
           <LinksTab runtime={runtime} connected={connected} notify={notify} onBatchCreated={goToBatch} />
         )}
         {tab === 'batches' && (
           <BatchesTab runtime={runtime} connected={connected} focusBatchId={focusBatch} />
+        )}
+        {tab === 'agent' && (
+          <ModuleAgentSurface
+            moduleId="collect"
+            label={moduleById('collect')?.label ?? '采集'}
+            agent={moduleAgents.collect ?? { preset: 'collect', subdir: 'collect' }}
+          />
         )}
       </Tabs>
     </div>

@@ -92,3 +92,48 @@ export const agentDefaultModelDescriptor: NamespaceDescriptor = {
     },
   },
 }
+
+const LAUNCH_MODE_OPTIONS = [
+  { value: 'persistent', label: '持久（自带 chromium + 登录 profile）' },
+  { value: 'cdp', label: 'CDP（连接真实浏览器）' },
+]
+
+/** `rxlab-collect-browser` namespace: the collect module's browser knobs. */
+export const collectBrowserDescriptor: NamespaceDescriptor = {
+  ns: 'rxlab-collect-browser',
+  title: '采集浏览器',
+  fields: {
+    launchMode: {
+      label: '浏览器模式',
+      control: 'select',
+      options: LAUNCH_MODE_OPTIONS,
+      help: '持久模式用于登录态采集；CDP 模式连接「打开 CDP 浏览器」启动的真实浏览器。改动需重启生效。',
+    },
+    cdpEndpoint: {
+      label: 'CDP 端点',
+      control: 'text',
+      help: '真实浏览器的远程调试端点，默认 http://127.0.0.1:9222。',
+    },
+    executablePath: {
+      label: '浏览器可执行文件路径',
+      control: 'text',
+      help: 'CDP「打开」时启动的可执行文件（Chrome/Edge）；留空时用 Playwright 自带 chromium。',
+    },
+    profileDir: {
+      label: '登录 profile 目录',
+      control: 'text',
+      help: '持久模式保存平台登录态的 user-data 目录。',
+    },
+    headless: {
+      label: '无头运行',
+      control: 'boolean',
+      help: '持久模式 agent 浏览是否无头；登录流程会临时打开有头窗口。',
+    },
+    navigateDelayMs: {
+      label: '页面间隔',
+      control: 'number',
+      unit: 'ms',
+      help: '浏览工具每次加载后的礼貌停顿。',
+    },
+  },
+}
