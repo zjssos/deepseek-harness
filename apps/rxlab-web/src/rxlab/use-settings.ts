@@ -14,6 +14,12 @@ import type {} from '@deepseek-ai/dsh-agent-presets/remote'
 import type { SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { RxlabClientRuntime } from './client'
+import {
+  DEFAULT_MODULE_AGENTS,
+  MODULE_AGENTS_SETTINGS_NAMESPACE,
+  moduleAgentsOf,
+  type ModuleAgents,
+} from './session-cwd'
 
 export const AGENT_PRESETS_NAMESPACE = 'agent-presets'
 
@@ -149,4 +155,20 @@ export function useWorkspaceRoot(
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const root = (value as Record<string, JsonValue>).root
   return typeof root === 'string' && root !== '' ? root : undefined
+}
+
+/**
+ * Live module → agent composition map from the `rxlab-module-agents` settings
+ * namespace. Falls back to the default base while loading, on failure, or when
+ * the host composes no such namespace.
+ */
+export function useModuleAgents(
+  runtime: RxlabClientRuntime | undefined,
+  connected: boolean,
+): ModuleAgents {
+  const { state } = useSettingsDescribe(runtime, connected)
+  if (state.status !== 'ready') return DEFAULT_MODULE_AGENTS
+  const view = state.value.namespaces.find(entry => entry.ns === MODULE_AGENTS_SETTINGS_NAMESPACE)
+  if (view === undefined) return DEFAULT_MODULE_AGENTS
+  return moduleAgentsOf(view.value)
 }

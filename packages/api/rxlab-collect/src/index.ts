@@ -55,6 +55,11 @@ import type {
   CollectLinkUpsertRequest,
   CollectLinkUpsertValue,
   CollectPlatform,
+  BrowserLaunchRequest,
+  BrowserLaunchValue,
+  BrowserStatusInfo,
+  BrowserStatusValue,
+  BrowserStopValue,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -171,8 +176,21 @@ export class CollectController extends TypertRemoteService {
     return created
   }
 
-  /** Launch headless chromium, falling back to the newest cached build. */
+  /** Launch headless chromium, or attach to the configured CDP browser for capture runs. */
   private async launchChromium(): Promise<Browser> {
+    const settings = (this.ctx as unknown as { settings?: { get?: (ns: string) => unknown } }).settings
+    const browserSettings = settings?.get?.('rxlab-collect-browser') as { launchMode?: string; cdpEndpoint?: string } | undefined
+    if (browserSettings?.launchMode === 'cdp') {
+      const endpoint = browserSettings.cdpEndpoint ?? 'http://127.0.0.1:9222'
+      try {
+        return await chromium.connectOverCDP(endpoint)
+      } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause)
+        throw new Error(
+          `CDP 捕获浏览器未就绪:${endpoint} 无响应(${detail})。请先在采集模块设置中配置并「打开 CDP 浏览器」,再运行采集批次。`,
+        )
+      }
+    }
     try {
       return await chromium.launch({ headless: true })
     } catch (cause) {
@@ -439,6 +457,45 @@ export class CollectController extends TypertRemoteService {
       .filter(([, capture]) => capture.linkId === request.linkId)
     rows.sort(([, left], [, right]) => right.capturedAt.localeCompare(left.capturedAt))
     return { captures: rows.slice(0, limit).map(([, capture]) => capture) }
+  }
+
+  /**
+   * Readable browser + launcher state for the SPA CDP status row.
+   * @returns the collect browse session state and launcher process state, each null when its row is not composed.
+   */
+  @Remote('browserStatus')
+  async browserStatus(): Promise<BrowserStatusValue> {
+    const session = this.ctx.get('collectBrowser') as { status(): Promise<BrowserStatusInfo> } | undefined
+    const launcher = this.ctx.get('collectCdpLauncher') as { status(): Promise<{ running: boolean; endpointUp: boolean }> } | undefined
+    return {
+      browser: session === undefined ? null : await session.status(),
+      launcher: launcher === undefined ? null : await launcher.status(),
+    }
+  }
+
+  /**
+   * Spawn a CDP-mode browser for the capture flow.
+   * @param request - executable path/port/profile overrides for this launch.
+   * @returns whether the endpoint came up after the launch wait, with a readable detail line.
+   * @throws RemoteError `gateway/internal` when the launcher row is not composed.
+   */
+  @Remote('browserLaunch')
+  async browserLaunch(request: BrowserLaunchRequest): Promise<BrowserLaunchValue> {
+    const launcher = this.ctx.get('collectCdpLauncher') as { launch(opts: BrowserLaunchRequest): Promise<BrowserLaunchValue> } | undefined
+    if (launcher === undefined) {
+      throw new RemoteError('gateway/internal', 'rxlab collect CDP 启动行未装配', {})
+    }
+    return launcher.launch(request)
+  }
+
+  /**
+   * Stop the launcher-owned CDP browser (an externally started browser is untouched).
+   * @returns whether a process this row spawned was stopped.
+   */
+  @Remote('browserStop')
+  async browserStop(): Promise<BrowserStopValue> {
+    const launcher = this.ctx.get('collectCdpLauncher') as { stop(): Promise<boolean> } | undefined
+    return { stopped: launcher === undefined ? false : await launcher.stop() }
   }
 
   /** Shared single-link upsert used by `upsertLink` and `importLinks`. */

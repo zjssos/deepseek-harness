@@ -25,6 +25,35 @@ export const RXLAB_PATHS_SERVICE = 'rxlabPaths'
 /** Settings namespace carrying the workbench workspace root. */
 export const WORKSPACE_SETTINGS_NAMESPACE = 'rxlab-workspace'
 
+/** Settings namespace carrying the module → agent composition map. */
+export const MODULE_AGENTS_SETTINGS_NAMESPACE = 'rxlab-module-agents'
+
+/** One module's agent composition: the preset id and the workspace subdir its sessions run in. */
+export interface ModuleAgentConfig {
+  /** Agent preset id that composes this module's agent. */
+  readonly preset: string
+  /** Workspace subdirectory the module's sessions run in. */
+  readonly subdir: string
+}
+
+/** Module→agent composition base: workspace-structure knowledge shared with the SPA and usage row. */
+export const DEFAULT_MODULE_AGENTS: Readonly<Record<string, ModuleAgentConfig>> = {
+  collect: { preset: 'collect', subdir: 'collect' },
+}
+
+/** Module→agent map value shape (also the settings section shape). */
+export interface ModuleAgentsSettings {
+  readonly modules: Readonly<Record<string, ModuleAgentConfig>>
+}
+
+/** Module→agent settings schema. */
+export const moduleAgentsSettingsSchema: z<ModuleAgentsSettings> = z.object({
+  modules: z.dict(z.object({
+    preset: z.string().required(),
+    subdir: z.string().required(),
+  })),
+})
+
 /** Subdirectory holding the storage backend root inside the workspace. */
 const STORAGE_SUBPATH = join('.rxlab', 'storage')
 
@@ -110,6 +139,8 @@ export interface RxlabPaths {
   readonly workspaceRoot: string
   /** Absolute storage backend root: `<workspaceRoot>/.rxlab/storage`. */
   readonly storageRoot: string
+  /** Module → agent preset/subdir composition map (see `rxlab-module-agents`). */
+  readonly moduleAgents: Readonly<Record<string, ModuleAgentConfig>>
 }
 
 /** Expand and resolve one configured root into the absolute workspace root. */
@@ -173,6 +204,7 @@ export class RxlabWorkspacePaths extends Service {
 
   private readonly compositionConfig: Config
   private rootValue: string | undefined
+  private moduleAgentsValue: Readonly<Record<string, ModuleAgentConfig>> | undefined
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'rxlabPaths')
@@ -190,6 +222,12 @@ export class RxlabWorkspacePaths extends Service {
     return join(this.workspaceRoot, STORAGE_SUBPATH)
   }
 
+  /** Module → agent preset/subdir composition map after the namespace resolves. */
+  get moduleAgents(): Readonly<Record<string, ModuleAgentConfig>> {
+    if (this.moduleAgentsValue === undefined) throw new Error('rxlab module agents are not started yet')
+    return this.moduleAgentsValue
+  }
+
   protected async [Service.init](): Promise<void> {
     // The namespace is restart-applied: consumers resolve the root once at
     // composition, so a root edit takes effect on the next start.
@@ -198,7 +236,19 @@ export class RxlabWorkspacePaths extends Service {
       onChange: () => {},
       applies: 'restart',
     })
+    this.ctx.settings.installSection(
+      this.ctx,
+      MODULE_AGENTS_SETTINGS_NAMESPACE,
+      moduleAgentsSettingsSchema,
+      { modules: DEFAULT_MODULE_AGENTS },
+      {
+        setSource: () => {},
+        onChange: () => {},
+        applies: 'restart',
+      },
+    )
     this.rootValue = resolveRoot((this.ctx.settings.get(WORKSPACE_SETTINGS_NAMESPACE) as Config).root)
+    this.moduleAgentsValue = (this.ctx.settings.get(MODULE_AGENTS_SETTINGS_NAMESPACE) as ModuleAgentsSettings).modules
     await bootstrapWorkspace(this.workspaceRoot, this.ctx.logger)
   }
 }

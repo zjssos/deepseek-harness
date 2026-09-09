@@ -32,11 +32,10 @@ import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
 import type { RxlabClientRuntime } from '@/rxlab/client'
 import { AgentSettingsSection } from '@/rxlab/settings-form/AgentSettingsSection'
 import { WorkspaceInfoBlock } from '@/rxlab/settings-form/WorkspaceInfoBlock'
-import { MODULE_SESSION_SUBDIRS } from '@/rxlab/session-cwd'
 import {
   AGENT_PRESETS_NAMESPACE, copyPreset, deletePreset, setDefaultPreset,
-  updateNamespace, unsetNamespaceField, usePresetRoster, useSettingsDescribe,
-  useWorkspaceRoot,
+  updateNamespace, unsetNamespaceField, useModuleAgents, usePresetRoster,
+  useSettingsDescribe, useWorkspaceRoot,
 } from '@/rxlab/use-settings'
 import { MODULE_NAMESPACE_SECTIONS } from './module-settings'
 
@@ -201,6 +200,7 @@ function ModuleSettingsTab({
 }: { runtime: RxlabClientRuntime | undefined; connected: boolean }) {
   const { state, reload } = useSettingsDescribe(runtime, connected)
   const workspaceRoot = useWorkspaceRoot(runtime, connected)
+  const moduleAgents = useModuleAgents(runtime, connected)
   const [savedViews, setSavedViews] = useState<ReadonlyMap<string, SettingsNamespaceView>>(new Map())
 
   const views = useMemo(() => {
@@ -240,8 +240,8 @@ function ModuleSettingsTab({
   const remaining = views.filter(view => !ownedNamespaces.has(view.ns))
 
   const sessionDirOf = (moduleId: string): string => {
-    const subdir = MODULE_SESSION_SUBDIRS[moduleId]
-    return subdir === undefined ? '工作空间根目录' : `工作空间/${subdir}`
+    const config = moduleAgents[moduleId]
+    return config === undefined ? '工作空间根目录' : `工作空间/${config.subdir}`
   }
 
   return (

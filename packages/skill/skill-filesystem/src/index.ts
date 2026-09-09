@@ -71,6 +71,13 @@ export interface Config {
   watchFollowSymlinks?: boolean
   /** Bundled skill root; defaults to `$DSH_BUNDLED_SKILL_DIR` when default roots are included, otherwise mounts none. */
   bundledSkillDir?: string
+  /**
+   * Optional module scope for this provider instance: when set, a discovered
+   * skill whose frontmatter `metadata.modules` array is present and does not
+   * include this value is dropped from the catalog (untagged skills stay
+   * general). Lets one unified skill directory serve per-module agents.
+   */
+  requireModule?: string
 }
 
 export const Config: Schema<Config> = z.object({
@@ -86,6 +93,7 @@ export const Config: Schema<Config> = z.object({
   watchMaxProjects: z.number().default(DEFAULT_WATCH_MAX_PROJECTS),
   watchFollowSymlinks: z.boolean().default(true),
   bundledSkillDir: z.string(),
+  requireModule: z.string(),
 })
 
 interface SkillRoot {
@@ -149,6 +157,7 @@ export class FileSystemSkillProvider implements SkillProvider {
   private readonly dshHome: string
   private readonly agentsHome: string
   private readonly customSkillDirs: string[]
+  private readonly requireModule: string | undefined
   private readonly watchManager: SkillWatchManager
   private readonly bundledSkillDir: string | undefined
   private disposal: Promise<void> | undefined
@@ -163,6 +172,7 @@ export class FileSystemSkillProvider implements SkillProvider {
     this.dshHome = resolveDshHome(config.dshHome)
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
     this.customSkillDirs = (config.customSkillDirs ?? []).map(root => resolve(root))
+    this.requireModule = config.requireModule
     this.watchManager = new SkillWatchManager(ctx, control.invalidate, resolveWatchConfig(config))
     control.signal.addEventListener('abort', () => { void this.dispose() }, { once: true })
     // The environment bundled root is a default root: an isolated provider
@@ -191,6 +201,7 @@ export class FileSystemSkillProvider implements SkillProvider {
     const candidates: SkillCandidate[] = []
     for (const root of roots) {
       for (const skill of await discoverRoot(root, this.ctx, this.name)) {
+        if (!moduleScopeAllows(skill.metadata, this.requireModule)) continue
         candidates.push(skill)
       }
     }
@@ -704,6 +715,19 @@ function assertPositiveInteger(field: string, value: number): void {
 
 function isAbsentPathError(error: unknown): boolean {
   return hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')
+}
+
+/**
+ * Whether one discovered skill passes a provider's module scope. An unset
+ * `requireModule` admits everything; otherwise a skill whose `metadata.modules`
+ * is present but does not list the module is denied, while an untagged skill
+ * stays general and is admitted.
+ */
+function moduleScopeAllows(metadata: Record<string, unknown> | undefined, requireModule: string | undefined): boolean {
+  if (requireModule === undefined) return true
+  const modules = metadata?.modules
+  if (!Array.isArray(modules)) return true
+  return modules.some(value => value === requireModule)
 }
 
 function isAbsentSkillPathError(error: unknown): boolean {

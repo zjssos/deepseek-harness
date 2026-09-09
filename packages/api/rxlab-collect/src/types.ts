@@ -301,3 +301,43 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'collect/adapter-unavailable': { readonly platform: CollectPlatform }
   }
 }
+
+/** Readable collect-browser state served by the `browserStatus` RPC. */
+export interface BrowserStatusInfo {
+  readonly launchMode: 'persistent' | 'cdp'
+  readonly profileDir: string
+  readonly cdpEndpoint: string
+  /** Resolved chromium executable when one is configured. */
+  readonly executablePath?: string
+  /** Whether the CDP endpoint answers (or the owned persistent context is open). */
+  readonly endpointUp: boolean
+  /** Whether the owned browser context is currently open. */
+  readonly contextOpen: boolean
+}
+
+/** Spawn a CDP-mode browser; values override the configured defaults for this call. */
+export interface BrowserLaunchRequest {
+  readonly executablePath?: string
+  readonly port?: number
+  readonly profileDir?: string
+  readonly headless?: boolean
+}
+
+/** Outcome of one launch attempt. */
+export interface BrowserLaunchValue {
+  readonly launched: boolean
+  readonly detail: string
+}
+
+/** Browser + launcher state for the SPA CDP status row. */
+export interface BrowserStatusValue {
+  /** The collect browse session state, or null when that service is not composed. */
+  readonly browser: BrowserStatusInfo | null
+  /** The CDP launcher process state (absent when the launcher row is not composed). */
+  readonly launcher: { readonly running: boolean; readonly endpointUp: boolean } | null
+}
+
+/** Outcome of stopping the launcher-owned CDP browser. */
+export interface BrowserStopValue {
+  readonly stopped: boolean
+}

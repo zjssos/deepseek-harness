@@ -892,3 +892,22 @@ describe('FileSystemSkillProvider', () => {
     }
   })
 })
+
+describe('module scope (requireModule)', () => {
+  it('drops skills tagged for other modules and keeps general and matching ones', async () => {
+    const home = await tempDir('scope-home')
+    const custom = await tempDir('scope-skills')
+    await mkdir(custom, { recursive: true })
+    await writeFile(join(custom, 'general.md'), '---\nname: general\ndescription: general skill\n---\n\nBody.\n')
+    await writeFile(join(custom, 'collect.md'), '---\nname: collect\ndescription: collect skill\nmetadata:\n  modules:\n    - collect\n---\n\nBody.\n')
+    await writeFile(join(custom, 'wiki.md'), '---\nname: wiki\ndescription: wiki skill\nmetadata:\n  modules:\n    - wiki\n---\n\nBody.\n')
+
+    const ctx = await setupLocal(home, { customSkillDirs: [custom], requireModule: 'collect' })
+    const names = (await ctx.skills.list({ cwd: home })).map(skill => skill.name).sort()
+    expect(names).toEqual(['collect', 'general'])
+
+    const ctxOpen = await setupLocal(home, { customSkillDirs: [custom] })
+    const all = (await ctxOpen.skills.list({ cwd: home })).map(skill => skill.name).sort()
+    expect(all).toEqual(['collect', 'general', 'wiki'])
+  })
+})

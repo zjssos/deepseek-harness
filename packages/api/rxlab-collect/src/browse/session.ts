@@ -19,6 +19,11 @@ import { chromium, type BrowserContext, type Page } from 'playwright'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-settings'
+import type { BrowserStatusInfo } from '../types.ts'
+
+/** Settings namespace carrying the user-facing collect-browser knobs. */
+export const COLLECT_BROWSER_SETTINGS_NAMESPACE = 'rxlab-collect-browser'
 
 /** Plugin config: which browser to drive and how it presents. */
 export interface Config {
@@ -34,6 +39,8 @@ export interface Config {
   loginTimeoutMs?: number
   /** Politeness pause the browse tools insert after each page load (ms). */
   navigateDelayMs?: number
+  /** Persistent mode: chromium executable path; defaults to Playwright's bundled build when absent. */
+  executablePath?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -43,10 +50,34 @@ export const Config: z<Config> = z.object({
   cdpEndpoint: z.string().default('http://127.0.0.1:9222'),
   loginTimeoutMs: z.number().default(300_000),
   navigateDelayMs: z.number().default(1_000),
+  executablePath: z.string(),
 })
 
 /** Complete config after schemastery applies every field default. */
-type ResolvedConfig = Required<Config>
+interface ResolvedSpec {
+  launchMode: 'persistent' | 'cdp'
+  profileDir: string
+  headless: boolean
+  cdpEndpoint: string
+  loginTimeoutMs: number
+  navigateDelayMs: number
+  executablePath?: string
+}
+
+/** Resolve programmatic construction config through the same defaults. */
+function resolveSpec(config: Config): ResolvedSpec {
+  return {
+    launchMode: config.launchMode ?? 'persistent',
+    profileDir: config.profileDir ?? dshHomePath('rxlab-browser'),
+    headless: config.headless ?? true,
+    cdpEndpoint: config.cdpEndpoint ?? 'http://127.0.0.1:9222',
+    loginTimeoutMs: config.loginTimeoutMs ?? 300_000,
+    navigateDelayMs: config.navigateDelayMs ?? 1_000,
+    ...config.executablePath === undefined || config.executablePath === ''
+      ? {}
+      : { executablePath: config.executablePath },
+  }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -70,11 +101,11 @@ export interface LoginOutcome {
  * same chain, and disposal waits for the chain before disconnecting.
  */
 export class CollectBrowserSession extends Service {
-  static inject = []
+  static inject = ['settings']
 
   static Config: z<Config> = Config
 
-  private readonly spec: ResolvedConfig
+  private spec: ResolvedSpec
   private context: BrowserContext | undefined
   /** Dedicated agent tab in CDP mode, so browsing never hijacks the user's own tabs. */
   private agentPage: Page | undefined
@@ -85,14 +116,7 @@ export class CollectBrowserSession extends Service {
     super(ctx, 'collectBrowser')
     // Programmatic construction may bypass schemastery normalization; resolve
     // the same defaults in one explicit step either way.
-    this.spec = {
-      launchMode: config.launchMode ?? 'persistent',
-      profileDir: config.profileDir ?? dshHomePath('rxlab-browser'),
-      headless: config.headless ?? true,
-      cdpEndpoint: config.cdpEndpoint ?? 'http://127.0.0.1:9222',
-      loginTimeoutMs: config.loginTimeoutMs ?? 300_000,
-      navigateDelayMs: config.navigateDelayMs ?? 1_000,
-    }
+    this.spec = resolveSpec(config)
   }
 
   /** Politeness pause (ms) browse tools insert after each page load. */
@@ -186,10 +210,37 @@ export class CollectBrowserSession extends Service {
 
   /** Arm the lifetime disposer: chain steps settle, then the browser disconnects. */
   protected [Service.init](): void {
+    const settings = this.ctx.settings as {
+      installSection?: (ctx: unknown, ns: string, schema: unknown, base: unknown, opts: unknown) => void
+      get?: (ns: string) => unknown
+    } | undefined
+    settings?.installSection?.(this.ctx, COLLECT_BROWSER_SETTINGS_NAMESPACE, Config, { ...this.spec }, {
+      setSource: () => {},
+      onChange: () => {},
+      applies: 'restart',
+    })
+    const merged = settings?.get?.(COLLECT_BROWSER_SETTINGS_NAMESPACE) as Config | undefined
+    if (merged !== undefined) this.spec = resolveSpec(merged)
     this.ctx.effect(() => () => {
       this.disposed = true
       return this.chain.then(() => this.teardown())
     }, 'rxlab_collect.browserSessionClose')
+  }
+
+  /**
+   * Readable browser state for the SPA CDP surface.
+   * @returns current mode, resolved locations, and whether the CDP endpoint (or the owned context) is live.
+   */
+  async status(): Promise<BrowserStatusInfo> {
+    const endpointUp = this.spec.launchMode === 'cdp' ? await this.cdpEndpointUp() : this.context !== undefined
+    return {
+      launchMode: this.spec.launchMode,
+      profileDir: this.spec.profileDir,
+      cdpEndpoint: this.spec.cdpEndpoint,
+      ...this.spec.executablePath === undefined ? {} : { executablePath: this.spec.executablePath },
+      endpointUp,
+      contextOpen: this.context !== undefined,
+    }
   }
 
   /** One serialized launch/relaunch settle point on the session chain. */
@@ -220,6 +271,7 @@ export class CollectBrowserSession extends Service {
       viewport: { width: 1440, height: 900 },
       locale: 'zh-CN',
       timeout: 60_000,
+      ...this.spec.executablePath === undefined ? {} : { executablePath: this.spec.executablePath },
     })
   }
 

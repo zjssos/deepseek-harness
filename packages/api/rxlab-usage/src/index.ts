@@ -31,16 +31,17 @@ import type {
 
 export type * from './types.ts'
 
-/** Workspace subdirectory each module's sessions run in (mirrors the SPA map). */
-const MODULE_SESSION_SUBDIRS: Record<string, string> = {
-  collect: 'collect',
-}
+/** The token-meter client-visible projection unit this row accounts for. */
+const TOKEN_USAGE_KEY = 'tokenUsage'
 
 /** Module id attributed to workspace-root and unmatched sessions. */
 const DEFAULT_MODULE = 'agent'
 
-/** The token-meter client-visible projection unit this row accounts for. */
-const TOKEN_USAGE_KEY = 'tokenUsage'
+/** One module's agent composition entry (subdir only; preset is not needed here). */
+interface ModuleAgentEntry {
+  readonly preset: string
+  readonly subdir: string
+}
 
 /**
  * Structural view of the ctx service members this row needs; the real
@@ -53,6 +54,7 @@ interface UsageProjectionFeed {
 
 interface UsagePaths {
   readonly workspaceRoot: string
+  readonly moduleAgents: Readonly<Record<string, ModuleAgentEntry>>
 }
 
 /** Wire-shaped snapshot of a projection change; invalid values are ignored. */
@@ -110,10 +112,14 @@ export class UsageController extends TypertRemoteService {
         if (key !== TOKEN_USAGE_KEY || this.paths === undefined) return
         const totals = totalsOf(value)
         if (totals === null) return
+        const subdirs: Record<string, string> = {}
+        for (const [moduleId, entry] of Object.entries(this.paths.moduleAgents)) {
+          subdirs[moduleId] = entry.subdir
+        }
         const module = moduleOfCwd(
           session.header.cwd,
           this.paths.workspaceRoot,
-          MODULE_SESSION_SUBDIRS,
+          subdirs,
           DEFAULT_MODULE,
         )
         void this.recordUsage(session.id, module, totals, seq)

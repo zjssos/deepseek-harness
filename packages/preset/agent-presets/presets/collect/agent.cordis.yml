@@ -61,3 +61,16 @@
   name: '@deepseek-ai/dsh-tool-todo'
   config:
     allowParallelInProgress: true
+
+# ── module skills ───────────────────────────────────────────────────────────
+# The collect module agent reads the unified workspace `.dsh/skills` catalog
+# scoped to its own module: skills tagged `metadata.modules: [collect]` (plus
+# untagged general skills) are visible; skills tagged for other modules are
+# not. Rows are per-session like every other preset contribution.
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    requireModule: collect
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'

@@ -9,7 +9,7 @@ import type { ModulePanelProps } from '@/modules/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RxlabClientRuntime } from '@/rxlab/client'
 import { sessionCwd } from '@/rxlab/session-cwd'
-import { useWorkspaceRoot } from '@/rxlab/use-settings'
+import { useModuleAgents, useWorkspaceRoot } from '@/rxlab/use-settings'
 import { useArchivedSessions } from '@/rxlab/use-archived-sessions'
 import {
   useAgentPresets,
@@ -53,6 +53,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const archived = useArchivedSessions(runtime, connected)
   const presetRoster = useAgentPresets(runtime, connected)
   const workspaceRoot = useWorkspaceRoot(runtime, connected)
+  const moduleAgents = useModuleAgents(runtime, connected)
   const liveUsage = useLiveSessionUsage(view)
   const usageRows = useSessionUsageMap(runtime, connected, list)
   const moduleUsage = useModuleUsage(runtime, connected)
@@ -74,7 +75,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
     setCreating(true)
     setBanner(null)
     try {
-      const id = await actions.create({ ...opts, cwd: sessionCwd(workspaceRoot, opts?.agentPreset) })
+      const id = await actions.create({ ...opts, cwd: sessionCwd(workspaceRoot, moduleAgents, opts?.agentPreset) })
       if (id === undefined) setBanner('新建会话未返回')
     } catch (cause) {
       setBanner(cause instanceof Error ? cause.message : String(cause))

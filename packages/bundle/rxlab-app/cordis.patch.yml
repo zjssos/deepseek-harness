@@ -2,10 +2,10 @@
 # layer. Unlike the web surface, rxlab serves a standalone SPA (apps/rxlab-web,
 # built to @deepseek-ai/dsh-rxlab-web-frontend/dist) and does not load the
 # Cordis browser client roster; the only browser-facing rows here are the
-# transport and browser-authentication half. The agent plane keeps the base
-# defaults: the SPA drives ordinary sessions through the Remote surface
-# (session-controller + api-remotes below) over the base process-wide agent
-# composition, not through per-session agent presets.
+# transport and browser-authentication half. The agent plane moves behind agent
+# presets: the SPA drives sessions through the Remote surface
+# (session-controller + api-remotes below) and each session's tool set is what
+# its mounted preset contributes (see the disable block below).
 # Applied after dsh-base's insert; rows here override base rows by id, with
 # the profile's own cordis.patch.yml and any --patch overlays still to come.
 #
@@ -60,6 +60,91 @@
   inject: [rxlabPaths]
   config:
     root: !!js ctx.rxlabPaths.storageRoot
+
+# ── the agent plane moves behind agent presets ─────────────────────────────
+#
+# Every row below composes what ONE agent contributes to the host registries:
+# its tools, its prompt sections, its delegation backends. The base keeps them
+# for the TUI, which is single-session and composes its agent process-wide; the
+# rxlab surface disables them here and lets each session mount a preset instead
+# (default `standard`, which mounts the same rows), so a module preset such as
+# `collect` contributes exactly its own curated tool set rather than seeing the
+# base rows too.
+#
+# Disabling rather than deleting is deliberate: the base is shared, and a row
+# absent from a surface overlay would silently reappear the day someone reorders
+# the composition. Host-plane stays mirror the web surface's reasoning: the
+# shell-env/jobs/skill/subagent/task/goal services and the token meter remain
+# process-wide registries or host-facing remotes.
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-jobs
+  disabled: true
+
+- id: tool-fs
+  disabled: true
+
+- id: tool-fs-search
+  disabled: true
+
+- id: skill-filesystem
+  disabled: true
+
+- id: tool-skill
+  disabled: true
+
+- id: command-goal
+  disabled: true
+
+- id: tool-goal
+  disabled: true
+
+- id: plan-mode
+  disabled: true
+
+- id: compaction-basic
+  disabled: true
+
+- id: command-compact
+  disabled: true
+
+- id: tool-result-pruner
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: workflow-worker-thread
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+- id: tool-ralph
+  disabled: true
+
+- id: agent-instructions
+  disabled: true
+
+- id: tool-todo
+  disabled: true
+
+- id: tool-web
+  disabled: true
 
 # ── rxlab host rows and the transport half ──────────────────────────────────
 
@@ -202,11 +287,19 @@
       config:
         launchMode: !!js "(ctx.rxlabStartup.cdp ? 'cdp' : 'persistent')"
 
+    # Spawns a CDP-mode chromium on demand (executable path/port/profile from
+    # the collect module settings, handed over by the browserLaunch RPC), so
+    # the SPA can open a real logged-in browser and run captures through it
+    # without relaunching the profile with `--cdp`.
+    - id: rxlab-collect-browser-launch
+      name: '@deepseek-ai/dsh-rxlab-collect/browser-launch'
+
     # The per-session agent preset roster (shipped presets bundled inside the
     # package as a read-only system root, locally authored presets under
-    # $DSH_HOME/.agent-presets). The rxlab SPA composes sessions on a preset
-    # through the session-create wire's agentPreset field; the workbench
-    # default keeps the base process-wide composition.
+    # $DSH_HOME/.agent-presets). The rxlab SPA composes every session on a
+    # preset through the session-create wire's agentPreset field; the workbench
+    # default (`standard`) carries the full tool set that used to be
+    # process-wide.
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
       config:
