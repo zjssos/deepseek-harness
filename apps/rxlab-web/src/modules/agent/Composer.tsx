@@ -13,9 +13,9 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { RxlabClientRuntime } from './client'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 import { selectSessionModel } from './use-model-catalog'
-import type { SessionView } from './use-sessions'
+import type { SessionView } from '@/rxlab/use-sessions'
 
 /** Flatten the catalog into `provider/model` row values. */
 function rowsOf(catalog: ModelCatalog): { readonly value: string; readonly provider: string; readonly model: string }[] {

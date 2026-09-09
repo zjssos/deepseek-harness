@@ -7,28 +7,37 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { RxlabClientRuntime } from './client'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import type { RxlabClientRuntime } from '@/rxlab/client'
+import { AgentSettingsSection } from '@/rxlab/settings-form/AgentSettingsSection'
 import {
   clearCredential,
   DEFAULT_API_KEY_REF,
   setCredential,
   useCredential,
-} from './use-credentials'
+} from '@/rxlab/use-credentials'
 
 export interface ModelSettingsDialogProps {
   readonly runtime: RxlabClientRuntime
+  readonly connected: boolean
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
 }
 
-/** Model/API-key settings: edit the DeepSeek credential the host resolves. */
-export function ModelSettingsDialog({ runtime, open, onOpenChange }: ModelSettingsDialogProps) {
+/**
+ * Agent settings dialog: the agent module's seat of the shared agent settings
+ * surface (module-default model / thinking / context namespaces) plus the
+ * DeepSeek credential editor. Scope is module-default level — sessions run on
+ * these deployment defaults; per-session overrides land with the later
+ * agent-integration work.
+ */
+export function ModelSettingsDialog({ runtime, connected, open, onOpenChange }: ModelSettingsDialogProps) {
   const [ref, setRef] = useState(DEFAULT_API_KEY_REF)
   const [secret, setSecret] = useState('')
   const [showSecret, setShowSecret] = useState(false)
@@ -84,97 +93,102 @@ export function ModelSettingsDialog({ runtime, open, onOpenChange }: ModelSettin
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>模型 / API Key 设置</DialogTitle>
+          <DialogTitle>Agent 设置</DialogTitle>
           <DialogDescription>
-            配置模型提供方使用的凭据。保存后写入 host 的
-            <code className="mx-1 rounded bg-muted px-1 font-mono text-[11px]">$DSH_HOME/.credentials.yaml</code>，
-            下一条消息即可使用（无需重启）。
+            编辑会话模块的默认设置：模型提供方、思考模式与上下文等写入
+            <code className="mx-1 rounded bg-muted px-1 font-mono text-[11px]">settings-rxlab.yaml</code>，
+            新建与后续请求即按新默认运行；会话内的模型仍可在输入栏单独切换。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
-          <div className="space-y-1.5">
-            <Label htmlFor="model-ref">凭据引用（环境变量名）</Label>
-            <Input
-              id="model-ref"
-              value={ref}
-              onChange={(event) => { setRef(event.target.value); credential.reload() }}
-              spellCheck={false}
-              className="font-mono text-sm"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              deepseek-official 适配器默认读取 DEEPSEEK_API_KEY；改了名则需与适配器配置一致。
-            </p>
-          </div>
+        <ScrollArea className="max-h-[68vh] pr-3">
+          <div className="flex flex-col gap-4 py-1">
+            <AgentSettingsSection runtime={runtime} connected={connected} />
 
-          <div className="flex items-center gap-2 text-xs">
-            <Badge variant={credential.configured ? 'secondary' : 'outline'} className="gap-1">
-              {credential.status === 'loading'
-                ? <Loader2 className="size-3 animate-spin" />
-                : credential.configured ? <ShieldCheck className="size-3" /> : null}
-              {credential.status === 'loading'
-                ? '检查中…'
-                : credential.configured ? '已配置' : credential.status === 'error' ? '状态不可用' : '未配置'}
-            </Badge>
-            {credential.configured
-              ? <span className="text-muted-foreground">凭据已存在（值不在此显示）</span>
-              : null}
-            {credential.error !== undefined && !credential.configured
-              ? <span className="text-destructive">describe 失败：{credential.error}</span>
-              : null}
-          </div>
+            <Separator />
 
-          {!credential.configured ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="model-secret">API Key</Label>
-              <div className="relative">
-                <Input
-                  id="model-secret"
-                  type={showSecret ? 'text' : 'password'}
-                  value={secret}
-                  onChange={(event) => { setSecret(event.target.value) }}
-                  placeholder="sk-…"
-                  spellCheck={false}
-                  autoComplete="off"
-                  className="pr-9 font-mono text-sm"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
-                  onClick={() => { setShowSecret(value => !value) }}
-                  aria-label={showSecret ? '隐藏' : '显示'}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium">DeepSeek 凭据</h3>
+                <Badge
+                  variant={credential.configured ? 'secondary' : 'outline'}
+                  className="gap-1"
                 >
-                  {showSecret ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                </Button>
+                  {credential.status === 'loading'
+                    ? <Loader2 className="size-3 animate-spin" />
+                    : credential.configured ? <ShieldCheck className="size-3" /> : null}
+                  {credential.status === 'loading'
+                    ? '检查中…'
+                    : credential.configured ? '已配置' : credential.status === 'error' ? '状态不可用' : '未配置'}
+                </Badge>
+                {credential.error !== undefined && !credential.configured
+                  ? <span className="text-xs text-destructive">describe 失败：{credential.error}</span>
+                  : null}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="model-ref">凭据引用（环境变量名）</Label>
+                <Input
+                  id="model-ref"
+                  value={ref}
+                  onChange={(event) => { setRef(event.target.value); credential.reload() }}
+                  spellCheck={false}
+                  className="font-mono text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  deepseek-official 适配器按“模型提供方”分区中的 apiKeyEnv 读取该凭据，默认 DEEPSEEK_API_KEY。
+                </p>
+              </div>
+              {!credential.configured ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="model-secret">API Key</Label>
+                  <div className="relative">
+                    <Input
+                      id="model-secret"
+                      type={showSecret ? 'text' : 'password'}
+                      value={secret}
+                      onChange={(event) => { setSecret(event.target.value) }}
+                      placeholder="sk-…"
+                      spellCheck={false}
+                      autoComplete="off"
+                      className="pr-9 font-mono text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                      onClick={() => { setShowSecret(value => !value) }}
+                      aria-label={showSecret ? '隐藏' : '显示'}
+                    >
+                      {showSecret ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              {notice !== null ? (
+                <div className="flex items-start gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs">
+                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+                  <span className="whitespace-pre-wrap">{notice}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                {credential.configured ? (
+                  <Button variant="outline" onClick={() => { void clear() }} disabled={busy}>
+                    {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+                    清除
+                  </Button>
+                ) : (
+                  <Button onClick={() => { void save() }} disabled={busy || secret.trim().length === 0}>
+                    {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+                    保存凭据
+                  </Button>
+                )}
               </div>
             </div>
-          ) : null}
-
-          {notice !== null ? (
-            <div className="flex items-start gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs">
-              <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-              <span className="whitespace-pre-wrap">{notice}</span>
-            </div>
-          ) : null}
-        </div>
-
-        <DialogFooter>
-          {credential.configured ? (
-            <Button variant="outline" onClick={() => { void clear() }} disabled={busy}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-              清除
-            </Button>
-          ) : (
-            <Button onClick={() => { void save() }} disabled={busy || secret.trim().length === 0}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-              保存
-            </Button>
-          )}
-        </DialogFooter>
+          </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   )

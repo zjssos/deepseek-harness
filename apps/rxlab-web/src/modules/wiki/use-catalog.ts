@@ -24,7 +24,7 @@ import type {
   WikiItemDraft,
   WikiKind,
 } from '@deepseek-ai/dsh-rxlab-catalog/types'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 
 /** List filter the wiki browser holds. */
 export interface CatalogListFilters {

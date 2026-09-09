@@ -19,7 +19,7 @@ import type {
   FittingRemoveRequest,
   FittingUpsertRequest,
 } from '@deepseek-ai/dsh-rxlab-fitting/types'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 
 export type FittingListPhase = 'loading' | 'ready' | 'error'
 

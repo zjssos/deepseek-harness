@@ -6,16 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ModulePanelProps } from '@/modules/types'
-import { useWorkspaceRoot } from '@/modules/settings/use-settings'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { RxlabClientRuntime } from './client'
-import { Composer } from './Composer'
-import { MessageList } from './MessageList'
-import { ModelSettingsDialog } from './ModelSettingsDialog'
-import { SessionSidebar } from './SessionSidebar'
-import { foldTranscript } from './transcript'
-import { useArchivedSessions } from './use-archived-sessions'
-import { useModelCatalog } from './use-model-catalog'
+import type { RxlabClientRuntime } from '@/rxlab/client'
+import { sessionCwd } from '@/rxlab/session-cwd'
+import { useWorkspaceRoot } from '@/rxlab/use-settings'
+import { useArchivedSessions } from '@/rxlab/use-archived-sessions'
 import {
   useAgentPresets,
   useConnected,
@@ -23,7 +18,15 @@ import {
   useSessionActions,
   useSessionList,
   useSessionView,
-} from './use-sessions'
+} from '@/rxlab/use-sessions'
+import { Composer } from './Composer'
+import { MessageList } from './MessageList'
+import { ModelSettingsDialog } from './ModelSettingsDialog'
+import { SessionSidebar } from './SessionSidebar'
+import { ModuleUsageChips, SessionUsageLine } from './SessionUsage'
+import { foldTranscript } from './transcript'
+import { useModelCatalog } from './use-model-catalog'
+import { useLiveSessionUsage, useModuleUsage, useSessionUsageMap } from './use-usage'
 
 function BootSkeleton() {
   return (
@@ -40,25 +43,6 @@ function BootSkeleton() {
   )
 }
 
-/**
- * Workspace subdirectory each module agent preset runs in. Keyed by preset id
- * because the workbench composes module agents as presets; a preset without
- * an entry, and preset-less sessions, run at the workspace root.
- */
-const MODULE_SESSION_SUBDIRS: Record<string, string> = {
-  collect: 'collect',
-}
-
-/**
- * The session cwd for one creation request: the module subdirectory, the
- * workspace root, or undefined (host default) when the workspace is unknown.
- */
-function sessionCwd(workspaceRoot: string | undefined, agentPreset: string | undefined): string | undefined {
-  if (workspaceRoot === undefined) return undefined
-  const subdir = agentPreset === undefined ? undefined : MODULE_SESSION_SUBDIRS[agentPreset]
-  return subdir === undefined ? workspaceRoot : `${workspaceRoot}/${subdir}`
-}
-
 /** The three-pane conversation workbench over one ready headless runtime. */
 function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const list = useSessionList(runtime)
@@ -69,6 +53,9 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const archived = useArchivedSessions(runtime, connected)
   const presetRoster = useAgentPresets(runtime, connected)
   const workspaceRoot = useWorkspaceRoot(runtime, connected)
+  const liveUsage = useLiveSessionUsage(view)
+  const usageRows = useSessionUsageMap(runtime, connected, list)
+  const moduleUsage = useModuleUsage(runtime, connected)
   const [creating, setCreating] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
@@ -138,6 +125,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
         onOpen={actions.open}
         onRename={onRename}
         onArchive={onArchive}
+        usageBySession={usageRows.byId}
       />
       <main className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b px-4">
@@ -170,8 +158,8 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
               size="icon"
               variant="ghost"
               className="size-7"
-              title="模型 / API Key 设置"
-              aria-label="模型 / API Key 设置"
+              title="Agent 设置"
+              aria-label="Agent 设置"
               onClick={() => { setSettingsOpen(true) }}
             >
               <Settings className="size-3.5" />
@@ -185,6 +173,14 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
           <div className="flex items-start gap-2 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
             <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
             <span className="whitespace-pre-wrap">{banner}</span>
+          </div>
+        ) : null}
+        {view !== undefined && liveUsage !== undefined ? (
+          <div className="flex items-center justify-between gap-3 border-b px-4 py-1 text-[11px] text-muted-foreground">
+            <SessionUsageLine totals={liveUsage} />
+            {moduleUsage.error === undefined && moduleUsage.modules.length > 0 ? (
+              <ModuleUsageChips modules={moduleUsage.modules} />
+            ) : null}
           </div>
         ) : null}
         <MessageList
@@ -205,7 +201,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
             />
           )}
       </main>
-      <ModelSettingsDialog runtime={runtime} open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ModelSettingsDialog runtime={runtime} connected={connected} open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   )
 }

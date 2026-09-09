@@ -35,6 +35,7 @@
     "@deepseek-ai/dsh-rxlab-catalog": "workspace:^",
     "@deepseek-ai/dsh-rxlab-collect": "workspace:^",
     "@deepseek-ai/dsh-rxlab-fitting": "workspace:^",
+    "@deepseek-ai/dsh-rxlab-usage": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-api-settings-controller": "workspace:^",
     "@deepseek-ai/dsh-api-workspace-controller": "workspace:^",

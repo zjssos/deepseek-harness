@@ -43,8 +43,8 @@ import type {
   CollectPlatform,
 } from '@deepseek-ai/dsh-rxlab-collect/types'
 import type { CatalogImportRequest } from '@deepseek-ai/dsh-rxlab-catalog/types'
-import { useConnected, useRxlabClient } from '@/modules/agent/use-sessions'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 import { catalogImportCollected } from '@/modules/wiki/use-catalog'
 import {
   createBatch,

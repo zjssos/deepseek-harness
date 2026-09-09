@@ -24,6 +24,8 @@ import { Separator } from '@/components/ui/separator'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { UsageTotals } from '@deepseek-ai/dsh-rxlab-usage/types'
+import { compactTokens, totalTokens } from './SessionUsage'
 
 export interface SessionSidebarProps {
   /** Live host session list; undefined until the first list snapshot lands. */
@@ -44,6 +46,8 @@ export interface SessionSidebarProps {
   readonly onArchive: (id: SessionId) => Promise<boolean>
   /** Whether an archive is in flight (disables the row menu while running). */
   readonly archiving: boolean
+  /** Token totals by session id for the per-row usage hint (absent id = none yet). */
+  readonly usageBySession: Readonly<Record<string, UsageTotals>>
 }
 
 /** Left rail: session list with create/open/rename/archive. */
@@ -59,6 +63,7 @@ export function SessionSidebar({
   onRename,
   onArchive,
   archiving,
+  usageBySession,
 }: SessionSidebarProps) {
   const [renaming, setRenaming] = useState<SessionId | undefined>(undefined)
   const [renamingTitle, setRenamingTitle] = useState('')
@@ -143,51 +148,62 @@ export function SessionSidebar({
               </p>
             )
             : null}
-          {rows.map(row => (
-            <div
-              key={row.id}
-              className={`group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm ${
-                list?.current === row.id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/60'
-              }`}
-            >
-              <button
-                type="button"
-                className="min-w-0 flex-1 truncate text-left"
-                onClick={() => { onOpen(row.id) }}
-                title={row.displayTitle}
+          {rows.map((row) => {
+            const rowUsage = usageBySession[row.id]
+            return (
+              <div
+                key={row.id}
+                className={`group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm ${
+                  list?.current === row.id
+                    ? 'bg-accent text-accent-foreground'
+                    : 'hover:bg-accent/60'
+                }`}
               >
-                {row.displayTitle}
-              </button>
-              {row.running ? <Badge className="size-1.5 shrink-0 rounded-full p-0" aria-label="运行中" /> : null}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-                    aria-label={`会话操作 ${row.displayTitle}`}
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 truncate text-left"
+                  onClick={() => { onOpen(row.id) }}
+                  title={row.displayTitle}
+                >
+                  {row.displayTitle}
+                </button>
+                {rowUsage !== undefined ? (
+                  <span
+                    className="shrink-0 font-mono text-[10px] text-muted-foreground"
+                    title={`用量 ${totalTokens(rowUsage).toLocaleString('zh-CN')} tokens`}
                   >
-                    <MoreHorizontal className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => { beginRename(row.id) }}>
-                    <SquarePen className="size-4" />
-                    重命名
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={archiving || !connected}
-                    onClick={() => { void onArchive(row.id) }}
-                  >
-                    <Archive className="size-4" />
-                    归档（隐藏）
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          ))}
+                    {compactTokens(totalTokens(rowUsage))}
+                  </span>
+                ) : null}
+                {row.running ? <Badge className="size-1.5 shrink-0 rounded-full p-0" aria-label="运行中" /> : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+                      aria-label={`会话操作 ${row.displayTitle}`}
+                    >
+                      <MoreHorizontal className="size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => { beginRename(row.id) }}>
+                      <SquarePen className="size-4" />
+                      重命名
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={archiving || !connected}
+                      onClick={() => { void onArchive(row.id) }}
+                    >
+                      <Archive className="size-4" />
+                      归档（隐藏）
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )
+          })}
         </div>
       </ScrollArea>
       <Separator />

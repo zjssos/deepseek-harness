@@ -15,7 +15,7 @@ import type {
   SessionSelectModelRequest,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { RxlabClientRuntime } from './client'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 
 export type ModelCatalogStatus = 'idle' | 'loading' | 'ready' | 'error'
 

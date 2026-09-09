@@ -116,6 +116,7 @@
     "@deepseek-ai/dsh-rxlab-catalog": "workspace:^",
     "@deepseek-ai/dsh-rxlab-collect": "workspace:^",
     "@deepseek-ai/dsh-rxlab-fitting": "workspace:^",
+    "@deepseek-ai/dsh-rxlab-usage": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",

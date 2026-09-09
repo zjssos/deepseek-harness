@@ -36,8 +36,8 @@ import type {
   FittingRecord,
   FittingRecordSummary,
 } from '@deepseek-ai/dsh-rxlab-fitting/types'
-import { useConnected, useRxlabClient } from '@/modules/agent/use-sessions'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 import { fittingDerive, fittingGet, fittingRemove, fittingUpsert, useFittingRecords } from './use-fitting'
 
 const USAGE_LABELS = { far: '远用', near: '近用', computer: '电脑/办公', outdoor: '户外', all: '全天' } as const

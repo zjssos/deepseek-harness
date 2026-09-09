@@ -21,7 +21,7 @@ import type {
   CollectPlatform,
   CollectLinkStatus,
 } from '@deepseek-ai/dsh-rxlab-collect/types'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 
 /** List filter the link browser holds. */
 export interface LinkListFilters {

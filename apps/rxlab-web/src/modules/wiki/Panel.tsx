@@ -47,8 +47,8 @@ import type {
   WikiItemDraft,
   WikiKind,
 } from '@deepseek-ai/dsh-rxlab-catalog/types'
-import { useConnected, useRxlabClient } from '@/modules/agent/use-sessions'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
+import type { RxlabClientRuntime } from '@/rxlab/client'
 import { catalogRemove, catalogUpsert, useCatalogList, type CatalogListFilters } from './use-catalog'
 
 const KIND_LABELS: Record<WikiKind, string> = {

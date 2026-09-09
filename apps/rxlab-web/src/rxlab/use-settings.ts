@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
 import type {} from '@deepseek-ai/dsh-agent-presets/remote'
 import type { SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import type { RxlabClientRuntime } from './client'
 
 export const AGENT_PRESETS_NAMESPACE = 'agent-presets'
 

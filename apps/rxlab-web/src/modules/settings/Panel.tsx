@@ -27,12 +27,18 @@ import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets/types'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ModulePanelProps } from '@/modules/types'
-import { useConnected, useRxlabClient } from '@/modules/agent/use-sessions'
-import type { RxlabClientRuntime } from '@/modules/agent/client'
+import { MODULES } from '@/modules/registry'
+import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
+import type { RxlabClientRuntime } from '@/rxlab/client'
+import { AgentSettingsSection } from '@/rxlab/settings-form/AgentSettingsSection'
+import { WorkspaceInfoBlock } from '@/rxlab/settings-form/WorkspaceInfoBlock'
+import { MODULE_SESSION_SUBDIRS } from '@/rxlab/session-cwd'
 import {
   AGENT_PRESETS_NAMESPACE, copyPreset, deletePreset, setDefaultPreset,
   updateNamespace, unsetNamespaceField, usePresetRoster, useSettingsDescribe,
-} from './use-settings'
+  useWorkspaceRoot,
+} from '@/rxlab/use-settings'
+import { MODULE_NAMESPACE_SECTIONS } from './module-settings'
 
 const NAMESPACE_LABELS: Record<string, string> = {
   'llm-deepseek': 'DeepSeek 模型',
@@ -194,6 +200,7 @@ function ModuleSettingsTab({
   runtime, connected,
 }: { runtime: RxlabClientRuntime | undefined; connected: boolean }) {
   const { state, reload } = useSettingsDescribe(runtime, connected)
+  const workspaceRoot = useWorkspaceRoot(runtime, connected)
   const [savedViews, setSavedViews] = useState<ReadonlyMap<string, SettingsNamespaceView>>(new Map())
 
   const views = useMemo(() => {
@@ -226,8 +233,19 @@ function ModuleSettingsTab({
     setSavedViews(prev => new Map(prev).set(next.ns, next))
   }
 
+  const ownedNamespaces = new Set<string>(
+    MODULE_NAMESPACE_SECTIONS.flatMap(section => section.namespaces.map(descriptor => descriptor.ns)),
+  )
+  ownedNamespaces.add(AGENT_PRESETS_NAMESPACE)
+  const remaining = views.filter(view => !ownedNamespaces.has(view.ns))
+
+  const sessionDirOf = (moduleId: string): string => {
+    const subdir = MODULE_SESSION_SUBDIRS[moduleId]
+    return subdir === undefined ? '工作空间根目录' : `工作空间/${subdir}`
+  }
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           {state.value.writable ? '写入直接落到 settings-rxlab.yaml。' : '当前部署为只读，无法保存修改。'}
@@ -236,9 +254,54 @@ function ModuleSettingsTab({
           <RefreshCw data-icon="inline-start" />刷新
         </Button>
       </div>
-      {views.map(view => (
-        <NamespaceCard key={view.ns} runtime={runtime} view={view} onSaved={onSaved} />
-      ))}
+
+      {MODULES.filter(module => module.id !== 'settings').map((module) => {
+        const active = module.status === 'active'
+        return (
+          <Card key={module.id}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <module.icon className="size-4 text-muted-foreground" />
+                <CardTitle className="text-sm">{module.label}</CardTitle>
+                <Badge variant={active ? 'secondary' : 'outline'}>{active ? '已接入' : '规划中'}</Badge>
+              </div>
+              <CardDescription className="line-clamp-1">{module.tagline}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <WorkspaceInfoBlock
+                rows={[
+                  { label: '会话目录', value: sessionDirOf(module.id), mono: true },
+                  { label: '模块范围', value: `${module.scope.length} 项` },
+                ]}
+              />
+              {module.id === 'agent'
+                ? <AgentSettingsSection runtime={runtime} connected={connected} />
+                : (
+                  <p className="text-xs text-muted-foreground">
+                    {active
+                      ? '该模块当前无可编辑设置；运行参数由 host 插件配置（cordis.yml / settings namespace）管理。'
+                      : '模块规划中，接入后再提供设置。'}
+                  </p>
+                )}
+            </CardContent>
+          </Card>
+        )
+      })}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">其他分区（Host 全局）</CardTitle>
+          <CardDescription>不属于某个工作台模块的部署分区，与工作空间等 host 级设置并列编辑。</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {workspaceRoot !== undefined ? (
+            <WorkspaceInfoBlock rows={[{ label: '工作空间根目录', value: workspaceRoot, mono: true }]} />
+          ) : null}
+          {remaining.map(view => (
+            <NamespaceCard key={view.ns} runtime={runtime} view={view} onSaved={onSaved} />
+          ))}
+        </CardContent>
+      </Card>
     </div>
   )
 }

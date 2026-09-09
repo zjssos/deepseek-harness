@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { SessionView } from './use-sessions'
+import type { SessionView } from '@/rxlab/use-sessions'
 import type { TranscriptRow } from './transcript'
 
 const MAX_ARGUMENTS_CHARS = 240
