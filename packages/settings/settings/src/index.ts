@@ -478,6 +478,7 @@ export abstract class SettingsProvider extends Service {
   ): void {
     const scope = this.register<Namespace, T>(ns, schema, {
       base: entry,
+      ...hooks.applies === undefined ? {} : { applies: hooks.applies },
       ...hooks.validate === undefined ? {} : { validate: hooks.validate },
     })
     hooks.setSource(() => scope.get())
@@ -882,6 +883,11 @@ export interface SettingsSectionHooks<T> {
    * memoized resolutions — after an attach, a detach, or a committed change.
    */
   onChange(): void
+  /**
+   * The owner's effect timing surfaced to configuration UIs; defaults to
+   * `live`. Owners that only read the source at startup declare `restart`.
+   */
+  applies?: SettingsApplies
   /**
    * Reject a resolved section this consumer could not act on, for constraints
    * its schema cannot express. See {@link SettingsRegisterOptions.validate}.

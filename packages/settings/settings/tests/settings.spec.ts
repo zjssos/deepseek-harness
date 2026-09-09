@@ -802,6 +802,21 @@ describe('SettingsProvider.installSection', () => {
     await unloading
     expect(changes).toEqual(['user'])
   })
+
+  it('forwards the declared effect timing to the describe view', async () => {
+    const { ctx } = await boot({})
+    const entry = { theme: 'entry' }
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(ctx, 'helper-ns', HelperSchema, entry, {
+        setSource: () => {},
+        onChange: () => {},
+        applies: 'restart',
+      })
+    })
+    await vi.waitFor(() => {
+      expect(ctx.settings.describe().find(descriptor => descriptor.ns === 'helper-ns')?.applies).toBe('restart')
+    })
+  })
 })
 
 describe('mutate (path-addressed writes)', () => {

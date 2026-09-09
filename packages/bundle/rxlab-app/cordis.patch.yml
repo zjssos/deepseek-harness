@@ -40,6 +40,13 @@
 # sharing or rewriting web's durable data. Credentials stay shared so models
 # keep working; attachments stay on shared defaults until rxlab gains its own
 # business-module data.
+#
+# Business storage moves into the workbench workspace so module artifacts and
+# storage units live in one exportable tree: the rxlab-workspace-paths row
+# resolves the workspace root (settings namespace `rxlab-workspace`, restart
+# semantics) and storage-json reads the resolved storage root from it. The
+# settings document and session logs stay in $DSH_HOME: the settings document
+# defines where the workspace is, so it cannot live inside it.
 
 - id: settings
   config:
@@ -50,8 +57,9 @@
     root: !!js dshHomePath('sessions-rxlab')
 
 - id: storage-json
+  inject: [rxlabPaths]
   config:
-    root: !!js dshHomePath('storages-rxlab')
+    root: !!js ctx.rxlabPaths.storageRoot
 
 # ── rxlab host rows and the transport half ──────────────────────────────────
 
@@ -60,6 +68,18 @@
     # waits for cmdlineArgs; no launcher metadata or special row kind is needed.
     - id: rxlab-startup
       name: '@deepseek-ai/dsh-rxlab-app/startup'
+
+    # Workbench workspace owner: registers the `rxlab-workspace` settings
+    # namespace, provides `rxlabPaths` (workspace root + storage root), and
+    # bootstraps the workspace skeleton on first use. Gated on rxlabStartup so
+    # `--help` never creates or registers anything. The storage-json override
+    # above injects this row's service, so business storage resolves inside
+    # the workspace.
+    - id: rxlab-workspace-paths
+      name: '@deepseek-ai/dsh-rxlab-app/workspace-paths'
+      inject: [rxlabStartup]
+      config:
+        root: !!js dshHomePath('rxlab-workspace')
 
     # Plain route-registration carrier; host and port come from the app's
     # rxlabStartup provider, with these deployment fallbacks. The dist is served

@@ -131,6 +131,7 @@
       "@deepseek-ai/dsh-headless/startup": ["./packages/bundle/headless/src/startup.ts"],
       "@deepseek-ai/dsh-web-app/startup": ["./packages/bundle/web-app/src/startup.ts"],
       "@deepseek-ai/dsh-rxlab-app/startup": ["./packages/bundle/rxlab-app/src/startup.ts"],
+      "@deepseek-ai/dsh-rxlab-app/workspace-paths": ["./packages/bundle/rxlab-app/src/workspace-paths.ts"],
       "@deepseek-ai/dsh-rxlab-collect/browser": ["./packages/api/rxlab-collect/src/browser.ts"],
       "@deepseek-ai/dsh-rxlab-collect/tools": ["./packages/api/rxlab-collect/src/tools.ts"],
       "@deepseek-ai/dsh-client-*/client": ["./packages/client/*/src/client"],

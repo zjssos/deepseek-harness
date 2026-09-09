@@ -36,6 +36,12 @@
       "path": "../../util/launch-environment"
     },
     {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
       "path": "../../core/system-prompt"
     },
     {

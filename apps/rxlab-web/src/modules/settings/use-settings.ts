@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 
-import type { AgentPresetRoster } from '@deepseek-ai/dsh-agent-presets'
+import type { AgentPresetRoster } from '@deepseek-ai/dsh-agent-presets/types'
 // Type-only: pulls the generated `remote.settings` namespace declaration.
 import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
 // Type-only: pulls the generated `remote.agentPresets` namespace declaration.
@@ -16,6 +16,8 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { RxlabClientRuntime } from '@/modules/agent/client'
 
 export const AGENT_PRESETS_NAMESPACE = 'agent-presets'
+
+export const WORKSPACE_SETTINGS_NAMESPACE = 'rxlab-workspace'
 
 export type LoadState<T> =
   | { readonly status: 'loading' }
@@ -128,4 +130,23 @@ export async function setDefaultPreset(
 ): Promise<string | undefined> {
   const result = await runtime.remote.settings.update(AGENT_PRESETS_NAMESPACE, { default: id }, expectedRevision)
   return result.ok ? undefined : `${result.error.code}: ${result.error.message}`
+}
+
+/**
+ * Live workbench workspace root from the `rxlab-workspace` settings namespace.
+ * Resolves undefined while loading, on failure, or when the host composes no
+ * such namespace, so session creation falls back to the host default cwd.
+ */
+export function useWorkspaceRoot(
+  runtime: RxlabClientRuntime | undefined,
+  connected: boolean,
+): string | undefined {
+  const { state } = useSettingsDescribe(runtime, connected)
+  if (state.status !== 'ready') return undefined
+  const view = state.value.namespaces.find(entry => entry.ns === WORKSPACE_SETTINGS_NAMESPACE)
+  if (view === undefined) return undefined
+  const value = view.value
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const root = (value as Record<string, JsonValue>).root
+  return typeof root === 'string' && root !== '' ? root : undefined
 }
