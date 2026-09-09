@@ -99,12 +99,15 @@ function newBatchId(): CollectBatchId {
 function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, subject: string): T {
   const parsed = schema.safeParse(value)
   if (parsed.success) return parsed.data
-  throw new RemoteError('gateway/bad-request', `rxlab collect ${subject} failed validation`, {
-    issues: parsed.error.issues.map(issue => ({
-      path: issue.path.join('.'),
-      message: issue.message,
-    })),
-  })
+  const issues = parsed.error.issues.map(issue => ({
+    path: issue.path.join('.'),
+    message: issue.message,
+  }))
+  const first = issues[0]
+  const hint = first === undefined
+    ? ''
+    : ` (${first.path === '' ? 'root' : first.path}: ${first.message})`
+  throw new RemoteError('gateway/bad-request', `rxlab collect ${subject} failed validation${hint}`, { issues })
 }
 
 /** Platform for one CSV record: the column value (validated), else a host guess. */
