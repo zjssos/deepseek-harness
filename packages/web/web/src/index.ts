@@ -8,6 +8,8 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+// Type-only: resolves the `settings` service declaration this plugin injects.
+import type {} from '@deepseek-ai/dsh-settings'
 import type {
   WebFetchProvider,
   WebFetchRequest,
@@ -59,6 +61,17 @@ export interface WebRuntimeConfig {
   readonly fetchProvider?: string
 }
 
+/** Settings namespace carrying the deployment-tunable provider picks. */
+export const WEB_SETTINGS_NAMESPACE = 'web'
+
+/** The user-writable slice of the web seam's configuration. */
+export interface WebSettings {
+  /** Explicit search provider id; cleared inherits the composition or env. */
+  readonly searchProvider?: string
+  /** Explicit fetch provider id; cleared inherits the composition or env. */
+  readonly fetchProvider?: string
+}
+
 /**
  * The web access service. Registered as `ctx.web` (one instance per context).
  *
@@ -84,13 +97,41 @@ export class WebRuntime extends Service {
 
   private searchProviders = new Map<string, WebSearchProvider>()
   private fetchProviders = new Map<string, WebFetchProvider>()
-  private readonly searchProviderId: string | undefined
-  private readonly fetchProviderId: string | undefined
+  private readonly envSearchProvider: string | undefined
+  private readonly envFetchProvider: string | undefined
+  /** The authoritative config source; the settings section overrides the composition entry. */
+  private source: () => WebRuntimeConfig = () => this.compositionConfig
+  private readonly compositionConfig: WebRuntimeConfig
 
   constructor(ctx: Context, config: WebRuntimeConfig = {}) {
     super(ctx, 'web')
-    this.searchProviderId = config.searchProvider ?? process.env.DSH_WEB_SEARCH_PROVIDER
-    this.fetchProviderId = config.fetchProvider ?? process.env.DSH_WEB_FETCH_PROVIDER
+    this.compositionConfig = config
+    this.envSearchProvider = process.env.DSH_WEB_SEARCH_PROVIDER
+    this.envFetchProvider = process.env.DSH_WEB_FETCH_PROVIDER
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(ctx, WEB_SETTINGS_NAMESPACE, WebRuntime.Config, config, {
+        setSource: (next) => {
+          this.source = next
+        },
+        // Selection resolves per execution, so there are no registration-level
+        // facts to re-judge: the next search/fetch reads the new snapshot.
+        onChange: () => {},
+      })
+    })
+  }
+
+  /** The effective search provider pick: the resolved settings snapshot, then the launch env. */
+  private get searchProviderId(): string | undefined {
+    const configured = this.source().searchProvider
+    // An empty string is the cleared sentinel a settings form writes; it
+    // means "no pick" exactly like an absent field, so auto-select applies.
+    return configured !== undefined && configured !== '' ? configured : this.envSearchProvider
+  }
+
+  /** The effective fetch provider pick: the resolved settings snapshot, then the launch env. */
+  private get fetchProviderId(): string | undefined {
+    const configured = this.source().fetchProvider
+    return configured !== undefined && configured !== '' ? configured : this.envFetchProvider
   }
 
   /**

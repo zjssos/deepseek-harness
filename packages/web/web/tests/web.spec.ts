@@ -1,13 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import WebRuntime, {
-  WebError,
+  WebError, WEB_SETTINGS_NAMESPACE,
   type WebFetchProvider,
   type WebFetchResult,
   type WebSearchProvider,
   type WebSearchRequest,
   type WebSearchResult,
 } from '@deepseek-ai/dsh-web'
+
+/** Every temp root created by the settings test, removed after each test. */
+const roots: string[] = []
+afterEach(async () => {
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+})
 
 /** A scripted search provider for contract tests. */
 function makeSearchProvider(
@@ -211,5 +221,36 @@ describe('WebError', () => {
     const error = new WebError('boom', 'WEB_INVALID_URL')
     expect(error.code).toBe('WEB_INVALID_URL')
     expect(error.name).toBe('WebError')
+  })
+})
+
+/**
+ * The provider picks are user settings. The composition entry is the section's
+ * base; a real file-backed settings provider layers the user document over it
+ * and every search/fetch re-reads the resolved snapshot.
+ */
+describe('provider picks as a user setting', () => {
+  it('takes the settings section over the launch environment and honors clearing it', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-web-settings-'))
+    roots.push(home)
+    const settingsFile = join(home, 'settings.yaml')
+    await writeFile(settingsFile, '{}\n')
+    const ctx = new Context()
+    await ctx.plugin(FileSettingsProvider, { path: settingsFile, watch: false })
+    await ctx.plugin(WebRuntime)
+    const web = ctx.web
+    web.registerSearchProvider(makeSearchProvider('one', available, () => Promise.resolve(searchResult('one'))))
+    web.registerSearchProvider(makeSearchProvider('two', available, () => Promise.resolve(searchResult('two'))))
+
+    // Two usable providers without a pick stay ambiguous, exactly as before.
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_AMBIGUOUS' }))
+
+    await ctx.settings.update(WEB_SETTINGS_NAMESPACE, { searchProvider: 'two' })
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'two' })
+
+    // Clearing the user field re-inherits the composition base — still no
+    // pick, so the seam requires exactly one usable provider again.
+    await ctx.settings.update(WEB_SETTINGS_NAMESPACE, { searchProvider: '' })
+    await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_AMBIGUOUS' }))
   })
 })
