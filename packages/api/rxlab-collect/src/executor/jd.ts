@@ -54,7 +54,7 @@ async function readJdState(page: import('playwright').Page): Promise<{
     const head = body.innerText.slice(0, 800)
     const gate = /请登录|扫码登录|验证|访问频繁/.test(head)
     const selectedMatch = body.innerText.match(/已选\s*(.*?)(?:，|$)/)
-    const priceMatch = body.innerText.match(/¥\s*\d+(?:\.\d+)?/)
+    const priceMatch = body.innerText.match(/[¥￥]\s*\d+(?:\.\d+)?/)
     const mainImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content') ?? ''
     return {
       gate,
@@ -77,9 +77,11 @@ async function readJdState(page: import('playwright').Page): Promise<{
 
 /** The numeric value of a JD price text, or undefined when unparseable. */
 function priceFrom(raw: string, note: string): CollectPrice | undefined {
-  const value = Number(raw.replace(/[^\d.]/g, ''))
-  if (!Number.isFinite(value)) return undefined
-  return { value, raw, note }
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const value = Number(trimmed.replace(/[^\d.]/g, ''))
+  if (!Number.isFinite(value) || value < 0) return undefined
+  return { value, raw: trimmed, note }
 }
 
 /**
@@ -102,7 +104,7 @@ async function readJdDesktop(
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await wait(2400)
     const raw = await page.evaluate(() => {
-      const match = document.body.innerText.match(/¥\s*\d+(?:\.\d+)?/)
+      const match = document.body.innerText.match(/[¥￥]\s*\d+(?:\.\d+)?/)
       const pairs: { name: string; value: string }[] = []
       const push = (text: string | null | undefined): void => {
         const normalized = (text ?? '').replace(/\s+/g, ' ').trim()

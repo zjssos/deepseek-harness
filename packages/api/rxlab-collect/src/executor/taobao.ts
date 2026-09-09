@@ -25,9 +25,11 @@ const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(re
 
 /** The numeric value of a Taobao price text, or undefined when unparseable. */
 function priceFrom(raw: string, note: string): CollectPrice | undefined {
-  const value = Number(raw.replace(/[^\d.]/g, ''))
-  if (!Number.isFinite(value)) return undefined
-  return { value, raw, note }
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const value = Number(trimmed.replace(/[^\d.]/g, ''))
+  if (!Number.isFinite(value) || value < 0) return undefined
+  return { value, raw: trimmed, note }
 }
 
 /**
@@ -59,7 +61,7 @@ export function createTaobaoCollector(
         const state = await page.evaluate(() => {
           const head = document.body.innerText.slice(0, 800)
           const gate = /请登录|扫码登录|手机登录|验证|滑块|访问频繁|操作频繁|安全校验/.test(head)
-          const priceMatch = document.body.innerText.match(/¥\s*\d{1,8}(?:\.\d{1,2})?/)
+          const priceMatch = document.body.innerText.match(/[¥￥]\s*\d{1,8}(?:\.\d{1,2})?/)
           const mainImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content') ?? ''
           return {
             gate,
