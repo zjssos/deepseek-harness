@@ -22,8 +22,9 @@
 
 ## 已知限制与延期
 
-- **collect 可编辑 knob 本轮未接入设置**：collect 的浏览器/抓取参数仍是 per-session 工具行 Config（`packages/api/rxlab-collect` 的 browser/tools 行），在设置界面注册 `rxlab-collect` settings namespace 并让工具逐次读取需跨 per-session 组装重构，与当轮优先级不符，作为 fast-follow。本轮 collect 分区为只读工作空间块。
+- **collect 可编辑 knob 已接入设置(后续提交)**：`rxlab-collect-browser` settings namespace 由浏览器行注册(restart 生效),设置中枢 collect 分区可编辑并提供「打开 CDP 浏览器」控制;确定性采集在 `cdp` 模式下 connectOverCDP。
+- **淘宝/天猫采集器已添加(后续提交)**:executor registry 在 JD 之外注册 `taobao`(匿名抓 item/detail …item.htm 的标题/价格/主图),JD 被风控时可换平台继续;登录流程仍仅 JD。
 - **用量记账不回填历史**：rxlab-usage 从观察到投影变更起记账；行存在前流过的会话用量在 SPA 回退到实时投影视图。
-- **映射双份**：模块→子目录映射在 host（`rxlab-usage/src/index.ts`）与 SPA（`src/rxlab/session-cwd.ts`）各一份，须同步演进。
+- **映射已归一**:模块→子目录映射单一源为 host `rxlab-module-agents` settings namespace(SPA 与 rxlab-usage 同读)。
 
 相关标准决策记录：fitting 模块基建见 `.agents/notes/implemented/architecture/2026-09-09-rxlab-fitting-module-infra.md`。

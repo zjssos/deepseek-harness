@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   cleanJdTitle,
+  cleanTaobaoTitle,
   csvToRecords,
   jdDesktopUrl,
   jdMobileUrl,
   jdSkuFromUrl,
   platformFromUrl,
   splitCsvLines,
+  taobaoIdFromUrl,
+  taobaoItemUrl,
 } from '../src/executor/parse.ts'
 
 describe('platformFromUrl', () => {
@@ -43,6 +46,21 @@ describe('jd url helpers', () => {
     expect(cleanJdTitle('BOLON 太阳镜 BX8005【行情 报价 价格 评测】-京东'))
       .toBe('BOLON 太阳镜 BX8005')
     expect(cleanJdTitle('普通标题')).toBe('普通标题')
+  })
+})
+
+describe('taobao url helpers', () => {
+  it('extracts the item id from taobao and tmall item urls', () => {
+    expect(taobaoIdFromUrl('https://item.taobao.com/item.htm?id=123456789&spm=a21n57')).toBe('123456789')
+    expect(taobaoIdFromUrl('https://detail.tmall.com/item.htm?id=987654321')).toBe('987654321')
+    expect(taobaoIdFromUrl('https://item.jd.com/1.html')).toBeNull()
+    expect(taobaoIdFromUrl('https://item.taobao.com/item.htm')).toBeNull()
+  })
+
+  it('builds the canonical item url and cleans document-title decoration', () => {
+    expect(taobaoItemUrl('123')).toBe('https://item.taobao.com/item.htm?id=123')
+    expect(cleanTaobaoTitle('夏日冰丝防晒袖套男-淘宝网')).toBe('夏日冰丝防晒袖套男')
+    expect(cleanTaobaoTitle('普通标题')).toBe('普通标题')
   })
 })
 

@@ -26,7 +26,10 @@ import {
   collectLinkSchema,
 } from './domain.ts'
 import { createCollectorRegistry } from './executor/index.ts'
-import { csvToRecords, jdDesktopUrl, jdMobileUrl, jdSkuFromUrl, platformFromUrl, readableError } from './executor/parse.ts'
+import {
+  csvToRecords, jdDesktopUrl, jdMobileUrl, jdSkuFromUrl, platformFromUrl, readableError,
+  taobaoIdFromUrl, taobaoItemUrl,
+} from './executor/parse.ts'
 import type { Collector, CollectorResult } from './executor/types.ts'
 import type {
   CollectBatchCreateRequest,
@@ -124,6 +127,13 @@ function canonicalize(platform: CollectPlatform, url: string, sku: string | unde
       throw new RemoteError('gateway/bad-request', 'JD 链接需要是 item.jd.com 商品详情页(含 sku)', {})
     }
     return { url: jdDesktopUrl(derived), mobileUrl: jdMobileUrl(derived), sku: derived }
+  }
+  if (platform === 'taobao') {
+    const derived = sku ?? taobaoIdFromUrl(url)
+    if (derived === null) {
+      throw new RemoteError('gateway/bad-request', '淘宝/天猫链接需要是含 id 的商品详情页', {})
+    }
+    return { url: taobaoItemUrl(derived), sku: derived }
   }
   return { url: url.trim(), ...(sku === undefined ? {} : { sku }) }
 }

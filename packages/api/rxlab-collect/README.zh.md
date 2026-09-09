@@ -58,7 +58,7 @@ Wire 与持久类型在 `./types`(浏览器安全 JSON,无运行时代码);zod �
 - 图廊详情图 URL 未采集:JD 图廊懒渲染、无稳定 DOM URL,`detailImageUrls` 留空;`mainImageUrl` 是 `og:image` meta 的尽力读取。
 - 结构化规格只来自桌面页参数表:匿名会话够不到客户端水合参数表的页面,只剩标题与变体文本作为规格信号。
 - 价格为尽力而为:部分网络下 JD 会给匿名 headless 会话返回无价格文本的风控页,此时采集保留 标题/变体/购买链接 而省略价格字段;在暖机或登录态浏览器会话下重采可刷新。
-- Agent 发现仅覆盖 JD 登录:`browser_login` 内置一个流程(`jd`);其他平台只能浏览公开页面。登录为人工 —— persistent 模式在有头窗口里完成,cdp 模式在真实浏览器里完成 —— host 上所有会话共享一个 profile/浏览器,无多账号或凭据存储;persistent profile 目录清空即需重新登录。
+- 确定性采集内置 JD(item.jd.com)与 淘宝/天猫(item/detail …item.htm)两款采集器,均匿名运行并在登录/风控页快速失败(某平台风控时可用另一平台继续)。Agent 发现仅覆盖 JD 登录:`browser_login` 内置一个流程(`jd`);其他平台只能浏览公开页面。登录为人工 —— persistent 模式在有头窗口里完成,cdp 模式在真实浏览器里完成 —— host 上所有会话共享一个 profile/浏览器,无多账号或凭据存储;persistent profile 目录清空即需重新登录。
 - JD 风控会从机房出口 IP 拦截 `search.jd.com` 与桌面 `item.jd.com` 页(登录前后均"访问频繁"/403);agent preset 已教授绕行路径(`so.m.jd.com/chanpin/<关键词>` 聚合页与 `item.m.jd.com/product/<sku>` H5 页),这才是这类 IP 下可靠的公开页面。
 - 定时重采(M2)未做;目前失败重试为手动(重跑该行/新批次)。
 - 包仅有纯解析与格式化逻辑单测;Host controller、网络 executor 与浏览会话尚无 spec(合入 master 前需补齐以满足逐文件覆盖率门),且无 invariant companion(无独立可分歧观测)。

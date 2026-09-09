@@ -17,6 +17,7 @@
     "src/browse/snapshot.ts",
     "src/executor/index.ts",
     "src/executor/jd.ts",
+    "src/executor/taobao.ts",
     "src/executor/parse.ts",
     "src/executor/types.ts"
   ],

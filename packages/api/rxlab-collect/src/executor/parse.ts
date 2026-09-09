@@ -31,6 +31,26 @@ export function jdDesktopUrl(sku: string): string {
   return `https://item.jd.com/${sku}.html`
 }
 
+/** Extract the numeric Taobao/Tmall item id from an item URL (`id=` query). */
+export function taobaoIdFromUrl(url: string): string | null {
+  if (!/taobao\.com|tmall\.com/.test(url)) return null
+  return url.match(/[?&]id=(\d+)/)?.[1] ?? null
+}
+
+/** The canonical Taobao desktop product URL for one item id. */
+export function taobaoItemUrl(id: string): string {
+  return `https://item.taobao.com/item.htm?id=${id}`
+}
+
+/** Remove Taobao's document-title decoration from a captured listing title. */
+export function cleanTaobaoTitle(title: string): string {
+  return title
+    .replace(/-淘宝网$/, '')
+    .replace(/-淘你喜欢/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /** Remove JD's document-title decoration from a captured listing title. */
 export function cleanJdTitle(title: string): string {
   return title
