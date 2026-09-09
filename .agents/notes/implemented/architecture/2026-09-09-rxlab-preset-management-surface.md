@@ -1,8 +1,8 @@
 # Agent Note: rxlab composes agent-presets as a management surface, not a session mount
 
-English | [中文](2026-09-09-rxlab-preset-management-surface.zh.md)
-
 Status: implemented
+
+English | [中文](2026-09-09-rxlab-preset-management-surface.zh.md)
 
 ## Problem
 

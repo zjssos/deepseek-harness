@@ -13,6 +13,14 @@ const MAX_RESULT_CHARS = 500
 /** Expanded context body keeps an inner scrollport instead of stretching the transcript. */
 const MAX_CONTEXT_CHARS = 20_000
 
+/**
+ * Long unbroken tokens (Windows paths, JSON arguments, tool output lines) carry
+ * `wrap-anywhere` throughout: the Radix ScrollArea wraps its children in a
+ * `display: table` element that grows to their min-content width, so one
+ * unbreakable line widens the whole transcript past the viewport and clips
+ * every row on the right.
+ */
+
 function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`
 }
@@ -38,12 +46,12 @@ function UserMessage({ row, onForkAt }: { row: Extract<TranscriptRow, { kind: 'u
   return (
     <div className="group flex items-start justify-end gap-1">
       <ForkButton seq={row.seq} onForkAt={onForkAt} />
-      <div className="flex max-w-[85%] items-start gap-2">
+      <div className="flex min-w-0 max-w-[85%] items-start gap-2">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-primary text-primary-foreground">
           <User className="size-3.5" />
         </div>
-        <div className="rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground">
-          {row.text.length > 0 ? <p className="whitespace-pre-wrap">{row.text}</p> : null}
+        <div className="min-w-0 rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground">
+          {row.text.length > 0 ? <p className="whitespace-pre-wrap wrap-anywhere">{row.text}</p> : null}
           {row.attachmentCount > 0
             ? <p className="mt-1 text-xs opacity-70">{row.attachmentCount} 个附件</p>
             : null}
@@ -57,19 +65,19 @@ function UserMessage({ row, onForkAt }: { row: Extract<TranscriptRow, { kind: 'u
 function AssistantMessage({ row, onForkAt }: { row: Extract<TranscriptRow, { kind: 'assistant' }>; onForkAt: (seq: number) => void }) {
   return (
     <div className="group flex items-start gap-1">
-      <div className="flex max-w-[85%] items-start gap-2">
+      <div className="flex min-w-0 max-w-[85%] items-start gap-2">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-muted">
           <Bot className="size-3.5" />
         </div>
-        <div className="rounded-2xl border bg-card px-3 py-2 text-sm">
+        <div className="min-w-0 rounded-2xl border bg-card px-3 py-2 text-sm">
           {row.reasoning.length > 0 ? (
             <details className="mb-1 text-xs text-muted-foreground">
               <summary className="cursor-pointer select-none">思考过程</summary>
-              <pre className="mt-1 whitespace-pre-wrap font-sans">{row.reasoning}</pre>
+              <pre className="mt-1 whitespace-pre-wrap wrap-anywhere font-sans">{row.reasoning}</pre>
             </details>
           ) : null}
           {row.text.length > 0
-            ? <p className="whitespace-pre-wrap">{row.text}</p>
+            ? <p className="whitespace-pre-wrap wrap-anywhere">{row.text}</p>
             : <p className="text-xs text-muted-foreground">（无文本回复）</p>}
           {row.interrupted ? <p className="mt-1 text-xs opacity-70">（已中断）</p> : null}
         </div>
@@ -82,8 +90,8 @@ function AssistantMessage({ row, onForkAt }: { row: Extract<TranscriptRow, { kin
 /** A tool execution summary card folded from the paired call/result events. */
 function ToolCard({ row }: { row: Extract<TranscriptRow, { kind: 'tool' }> }) {
   return (
-    <Card className="mx-auto w-full max-w-[85%]">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 px-4 py-2.5">
+    <Card className="mx-auto w-full max-w-[85%] gap-0 py-0">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 px-4 py-2.5">
         <CardTitle className="font-mono text-xs font-medium">{row.name}</CardTitle>
         {row.error !== null
           ? <Badge variant="destructive">{row.error.name || row.error.code}</Badge>
@@ -91,10 +99,10 @@ function ToolCard({ row }: { row: Extract<TranscriptRow, { kind: 'tool' }> }) {
             ? <Badge variant="secondary">完成</Badge>
             : <Badge className="gap-1"><Loader2 className="size-3 animate-spin" />运行中</Badge>}
       </CardHeader>
-      <CardContent className="space-y-1.5 px-4 py-2.5">
+      <CardContent className="flex flex-col gap-1.5 px-4 py-2.5">
         {row.argumentsText.length > 0
           ? (
-            <pre className="overflow-hidden rounded-md bg-muted/60 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            <pre className="whitespace-pre-wrap wrap-anywhere rounded-md bg-muted/60 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
               {clip(row.argumentsText, MAX_ARGUMENTS_CHARS)}
             </pre>
           )
@@ -102,7 +110,7 @@ function ToolCard({ row }: { row: Extract<TranscriptRow, { kind: 'tool' }> }) {
         {row.completed
           ? (
             row.resultText.length > 0
-              ? <pre className="overflow-hidden text-xs leading-relaxed text-muted-foreground">{clip(row.resultText, MAX_RESULT_CHARS)}</pre>
+              ? <pre className="whitespace-pre-wrap wrap-anywhere text-xs leading-relaxed text-muted-foreground">{clip(row.resultText, MAX_RESULT_CHARS)}</pre>
               : <p className="text-xs text-muted-foreground">（无文本结果）</p>
           )
           : null}
@@ -128,7 +136,7 @@ function ContextRowView({ row }: { row: Extract<TranscriptRow, { kind: 'context'
         <span>上下文注入</span>
         <span className="min-w-0 truncate font-mono">{row.label}</span>
       </summary>
-      <pre className="max-h-56 overflow-y-auto border-t px-4 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+      <pre className="max-h-56 overflow-y-auto border-t px-4 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap wrap-anywhere text-muted-foreground">
         {text}
       </pre>
     </details>
@@ -181,11 +189,11 @@ export function MessageList({ view, rows, onForkAt }: MessageListProps) {
       ) : lastAgentError !== null ? (
         <div className="flex items-start gap-2 border-b px-4 py-2 text-xs text-destructive">
           <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-          <span className="whitespace-pre-wrap">Agent 运行出错：{lastAgentError}</span>
+          <span className="whitespace-pre-wrap wrap-anywhere">Agent 运行出错：{lastAgentError}</span>
         </div>
       ) : null}
       {snapshot.queue.length > 0 ? (
-        <div className="space-y-1 border-b px-3 py-2">
+        <div className="flex flex-col gap-1 border-b px-3 py-2">
           {snapshot.queue.map((item, index) => (
             <div key={item.id} className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3 shrink-0 animate-spin" />
@@ -215,7 +223,7 @@ export function MessageList({ view, rows, onForkAt }: MessageListProps) {
         </div>
       ) : null}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-4 p-4">
+        <div className="flex w-full min-w-0 flex-col gap-4 p-4">
           {snapshot.hasMore && !snapshot.loadingOlder ? (
             <div className="flex justify-center">
               <Button size="sm" variant="outline" onClick={() => { void viewFace?.loadOlder() }}>
