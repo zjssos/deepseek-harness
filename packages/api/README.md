@@ -33,6 +33,7 @@ The packages below provide the Remote layer; the package READMEs own the exhaust
 | [`workspace-controller/`](workspace-controller/README.md) | Owns Workspace mutations and the complete Client Workspace projection. | `ctx.workspaceController` / `ctx.remote.workspace` |
 | [`workspace-files/`](workspace-files/README.md) | Owns bounded workspace file access — `stat`, paged `read`, `list`, and the agent-write `changes` feed — and the Client `file` resource provider over it. | `ctx.workspaceFiles` / `ctx.remote.workspaceFiles` |
 | [`rxlab-catalog/`](rxlab-catalog/README.md) | Owns the rxlab product-Wiki catalog master data over the `rxlab_catalog` storage domain; a rxlab business row that self-mounts its Client contribution. | `ctx.catalogController` / `ctx.remote.rxlabCatalog` |
+| [`rxlab-fitting/`](rxlab-fitting/README.md) | Owns the rxlab optometry module: staged exam records over the `rxlab_fitting` storage domain, the deterministic prescription derivation engine, and the typed `rxlabFitting` Remote; a rxlab business row that self-mounts its Client contribution. | `ctx.fittingController` / `ctx.remote.rxlabFitting` |
 
 Remote calls run Client → Host over the application's shared Connection. API Gateway owns Remote transport, while the controller packages own Session, configuration-surface, and Workspace behavior. Feature packages register exact Connection Fetch routes for responses that do not fit Remote invocation, such as streamed downloads.
 

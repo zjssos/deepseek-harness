@@ -33,6 +33,7 @@ kind: "package-group"
 | [`workspace-controller/`](workspace-controller/README.zh.md) | 拥有 Workspace 变更与完整 Client Workspace 投影。 | `ctx.workspaceController` / `ctx.remote.workspace` |
 | [`workspace-files/`](workspace-files/README.zh.md) | 拥有有界的工作区文件访问——`stat`、分页 `read`、`list` 与 agent 写入的 `changes` 流——以及其上的 Client `file` 资源提供者。 | `ctx.workspaceFiles` / `ctx.remote.workspaceFiles` |
 | [`rxlab-catalog/`](rxlab-catalog/README.zh.md) | 拥有 `rxlab_catalog` 存储域之上的 rxlab 商品 Wiki master data；是自带 Client 装配的 rxlab 业务行。 | `ctx.catalogController` / `ctx.remote.rxlabCatalog` |
+| [`rxlab-fitting/`](rxlab-fitting/README.zh.md) | 拥有 rxlab 验光配镜模块：`rxlab_fitting` 存储域的分阶段验光记录、确定性处方推导引擎与类型化 `rxlabFitting` Remote；是自带 Client 装配的 rxlab 业务行。 | `ctx.fittingController` / `ctx.remote.rxlabFitting` |
 
 Remote 调用沿 Client → Host 方向运行在应用共享的 Connection 之上。API Gateway 拥有 Remote 传输，各 controller 包分别拥有 Session、配置界面与 Workspace 行为。流式下载等不适合 Remote 调用的响应由功能包注册精确的 Connection Fetch 路由。
 
