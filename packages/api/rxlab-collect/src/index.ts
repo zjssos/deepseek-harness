@@ -196,26 +196,47 @@ export class CollectController extends TypertRemoteService {
 
   /** Launch headless chromium, or attach to a CDP browser when the namespace is in cdp mode. */
   private async launchChromium(): Promise<Browser> {
-    let browserSettings: { launchMode?: string; cdpEndpoint?: string } | undefined
+    let browserSettings: { launchMode?: string; cdpEndpoint?: string; executablePath?: string } | undefined
     try {
       browserSettings = this.ctx.settings.get('rxlab-collect-browser') as
-        | { launchMode?: string; cdpEndpoint?: string }
+        | { launchMode?: string; cdpEndpoint?: string; executablePath?: string }
         | undefined
     } catch {
       browserSettings = undefined
     }
     // Capture stays on its own anonymous headless chromium (no window) unless
-    // the person explicitly set cdp mode. Opening the CDP browser from the
-    // settings is for agent/manual browsing; silently hijacking every capture
-    // onto it made each item open a new window over CDP.
+    // the person explicitly set cdp mode. In cdp mode the collector attaches
+    // to the real browser; when none is running it launches one from the
+    // settings (executable path) through the launcher row and retries once, so
+    // a capture never dies just because the browser was not opened first.
     if (browserSettings?.launchMode === 'cdp') {
       const endpoint = browserSettings.cdpEndpoint ?? 'http://127.0.0.1:9222'
+      const attach = async (): Promise<Browser> => chromium.connectOverCDP(endpoint)
       try {
-        return await chromium.connectOverCDP(endpoint)
+        return await attach()
       } catch (cause) {
-        const detail = cause instanceof Error ? cause.message : String(cause)
+        const first = cause instanceof Error ? cause.message : String(cause)
+        const launcher = this.ctx.get('collectCdpLauncher') as
+          | { launch(opts: { executablePath?: string; port?: number; headless?: boolean }): Promise<{ launched: boolean; detail: string }> }
+          | undefined
+        if (launcher !== undefined) {
+          const executablePath = browserSettings?.executablePath?.trim()
+          const parsedPort = Number(new URL(endpoint).port)
+          const outcome = await launcher.launch({
+            ...executablePath === undefined || executablePath === '' ? {} : { executablePath },
+            port: Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 9222,
+          })
+          if (outcome.launched) {
+            try {
+              return await attach()
+            } catch (second) {
+              throw new Error(`CDP 捕获浏览器已拉起但连接仍失败:${endpoint} (${second instanceof Error ? second.message : String(second)})`)
+            }
+          }
+          throw new Error(`CDP 捕获浏览器启动失败:${outcome.detail}`)
+        }
         throw new Error(
-          `CDP 捕获浏览器未就绪:${endpoint} 无响应(${detail})。请先启动 --remote-debugging-port 的真实浏览器并确认端点可达,再运行采集批次。`,
+          `CDP 捕获浏览器未就绪:${endpoint} 无响应(${first})。请在采集模块设置里填写浏览器可执行文件路径并把浏览器模式设为 CDP,再运行采集批次(采集会自动拉起该浏览器)。`,
         )
       }
     }

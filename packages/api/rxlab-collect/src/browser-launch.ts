@@ -98,8 +98,9 @@ export class CollectCdpLauncher extends Service {
     const port = opts.port ?? this.defaults.port
     const profileDir = opts.profileDir ?? this.defaults.profileDir
     const headless = opts.headless ?? this.defaults.headless
-    const executable = (opts.executablePath ?? this.defaults.executablePath).trim()
-    if (executable.length === 0) {
+    const configured = (opts.executablePath ?? this.defaults.executablePath).trim()
+    const executable = configured.length > 0 ? configured : defaultChromiumExecutable()
+    if (executable === undefined) {
       return { launched: false, detail: '未配置浏览器可执行文件：请在 collect 模块设置中填写 CDP 浏览器路径' }
     }
     this.endpointValue = `http://127.0.0.1:${port}`
