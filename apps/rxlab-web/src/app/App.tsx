@@ -22,7 +22,6 @@ export default function App() {
     <Routes>
       <Route element={<WorkbenchLayout />}>
         <Route index element={<Navigate to={`/${home}`} replace />} />
-        <Route path="jobs" element={<ModuleWorkspace />} />
         <Route path="jobs/:jobId" element={<JobDetailRoute />} />
         <Route path=":moduleId" element={<ModuleWorkspace />} />
         <Route path="*" element={<Navigate to={`/${home}`} replace />} />
