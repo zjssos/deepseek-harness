@@ -42,7 +42,7 @@ CompatibilityReport = { overall: 'OK'|'WARN'|'FAIL'; checks: { name: string; sta
 
 `rxlab_content` v1、per-record：`ContentItem = { id: ContentItemId; kind: ContentKind; stage?: StageId; title: string; tags: string[]; body: string; updatedAt: string }`。
 
-`rxlab_usage` v2、per-record、`compatibleVersions: [1]`，新增 `jobs`、`stageUsage` 两表，原有 `sessions`/`modules` 不动。
+`rxlab_usage` v2、per-record、`compatibleVersions: [1]`，新增 `jobs` 与 `stage_usage` 两表（存储表名限 `^[a-z][a-z0-9_]*$`，故用下划线；wire 名保持 `stageUsage`），原有 `sessions`/`modules` 不动。
 
 ## Remote 契约
 
@@ -87,7 +87,7 @@ delete({ id: ContentItemId }): { removed: boolean }
 jobUsage({ jobId: JobId }): { totals: UsageTotals; cost?: number; currency?: string; stages: { stage: StageId; totals: UsageTotals; cost?: number }[] }
 ```
 
-`UsageTotals` 沿用现有四桶。成本按 `token-meter` 的路由计价计算；无路由信息时 `cost` 省略而非置零。
+`UsageTotals` 沿用现有四桶。成本不来自 `token-meter` 的 `route-pricing`（那只计量图像/文件表示，不含货币价），改由 `rxlab-usage` 的运行时可配置费率计算：Config 字段 `pricingCurrency` 与 `routeRates`（每 token 费率，按 provider/model 路由）；未配置费率或无路由信息时省略 `cost` 而非置零。
 
 ## settings 命名空间
 
@@ -131,7 +131,7 @@ jobUsage({ jobId: JobId }): { totals: UsageTotals; cost?: number; currency?: str
 
 **WS-3**：新建 `packages/api/rxlab-content`，照 fitting 模板。`rxlab_content` v1 单表 `items`；RPC `list`/`get`/`upsert`/`delete`；`src/client/index.ts` 自挂载。测试：域 schema 与 Controller 写读。README 双语。
 
-**WS-4**：扩展 `rxlab-usage` 到 v2（`compatibleVersions: [1]`），新增 `jobs`/`stageUsage` 表与 `jobUsage` RPC。监听工单会话持久日志：按 `deriveTurnTokenUsage` 取每轮用量与 `routes`，按最近的 `job_write_stage` 工装调用（读 job 的 `sessionId`）把轮次归到阶段，乘 `token-meter` 路由计价得成本。**先写一个最小探针**验证"轮次→阶段"归集在真实会话日志上成立，再并入。测试：归集纯函数单元 + 组合。README 双语。
+**WS-4**：扩展 `rxlab-usage` 到 v2（`compatibleVersions: [1]`），新增 `jobs`/`stageUsage` 表与 `jobUsage` RPC。监听工单会话持久日志：按 `deriveTurnTokenUsage` 取每轮用量与 `routes`，按最近的 `job_write_stage` 工具调用（读 job 的 `sessionId`）把轮次归到阶段，乘本包运行时费率（Config `routeRates`）得成本。**先写一个最小探针**验证"轮次→阶段"归集在真实会话日志上成立，再并入。测试：归集纯函数单元 + 组合。README 双语。
 
 **WS-5**：改 `apps/rxlab-web`。`registry.tsx` 主轴改六阶段 + 工单，新增 `group`；`/jobs`、`/jobs/:jobId`、六阶段面板、`/content`、参照库并入内容；移除 `recommend`/`render`/`flow` 占位；阶段面板统一 `投入→校验→产出`；工单页渲染 `GuideDocument` 并导出 HTML；调用 `remote.rxlabRecommend`/`rxlabJob`/`rxlabContent`/`rxlabUsage`。遵守 `apps/rxlab-web/AGENTS.md` 与 shadcn/rxlab-web 技能；验证 `typecheck` + `build` + 浏览器冒烟。
 
