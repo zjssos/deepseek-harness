@@ -48,7 +48,7 @@ import type { RxlabClientRuntime } from '@/rxlab/client'
 import { useModuleAgents } from '@/rxlab/use-settings'
 import { moduleById } from '@/modules/registry'
 import { ModuleAgentSurface } from '@/rxlab/module-agent/ModuleAgentSurface'
-import { catalogImportCollected } from '@/modules/wiki/use-catalog'
+import { catalogImportCollected } from '@/modules/content/use-catalog'
 import {
   createBatch,
   importLinks,
