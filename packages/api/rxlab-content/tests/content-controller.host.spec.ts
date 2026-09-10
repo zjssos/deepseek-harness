@@ -73,8 +73,12 @@ describe('upsert and get', () => {
 describe('list', () => {
   it('summarizes without the body and sorts newest write first', async () => {
     const { controller } = await boot()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
     const first = await controller.upsert({ item: knowledge() })
+    vi.setSystemTime(new Date('2026-01-01T00:00:01.000Z'))
     const second = await controller.upsert({ item: knowledge({ kind: 'script', title: '取镜话术' }) })
+    vi.useRealTimers()
     const { items } = await controller.list({})
     expect(items.length).toBe(2)
     expect(items[0]?.id).toBe(second.item.id)
