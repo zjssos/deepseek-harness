@@ -1,0 +1,23 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/index.ts",
+    "src/tools.ts",
+    "src/engine.ts",
+    "src/rules.ts",
+    "src/types.ts"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../rxlab-fitting/tsconfig.host.json" },
+    { "path": "../../settings/settings" },
+    { "path": "../../core/tools" },
+    { "path": "../../typert/protocol" }
+  ]
+}
