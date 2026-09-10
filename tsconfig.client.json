@@ -67,6 +67,7 @@
     { "path": "./packages/api/remotes/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-catalog/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-collect/tsconfig.client.json" },
+    { "path": "./packages/api/rxlab-content/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-fitting/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-job/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-recommend/tsconfig.client.json" },
@@ -121,7 +122,6 @@
     { "path": "./packages/api/workspace-files/tsconfig.client.json" },
     { "path": "./packages/client/web" },
     { "path": "./packages/context/file-reference" },
-    { "path": "./apps/web" },
-    { "path": "./packages/api/rxlab-content/tsconfig.client.json" }
+    { "path": "./apps/web" }
   ]
 }

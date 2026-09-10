@@ -1177,6 +1177,31 @@ importers:
         specifier: workspace:^
         version: link:../../typert/protocol
 
+  packages/api/rxlab-content:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.5.4
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../gateway
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+
   packages/api/rxlab-fitting:
     dependencies:
       zod:
@@ -1201,6 +1226,65 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol
+
+  packages/api/rxlab-job:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.5.4
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../gateway
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:^
+        version: link:../../util/values
+
+  packages/api/rxlab-recommend:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../gateway
+      '@deepseek-ai/dsh-rxlab-fitting':
+        specifier: workspace:^
+        version: link:../rxlab-fitting
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:^
+        version: link:../../settings/settings
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:^
+        version: link:../../util/values
 
   packages/api/rxlab-usage:
     dependencies:
@@ -2072,9 +2156,18 @@ importers:
       '@deepseek-ai/dsh-rxlab-collect':
         specifier: workspace:^
         version: link:../../api/rxlab-collect
+      '@deepseek-ai/dsh-rxlab-content':
+        specifier: workspace:^
+        version: link:../../api/rxlab-content
       '@deepseek-ai/dsh-rxlab-fitting':
         specifier: workspace:^
         version: link:../../api/rxlab-fitting
+      '@deepseek-ai/dsh-rxlab-job':
+        specifier: workspace:^
+        version: link:../../api/rxlab-job
+      '@deepseek-ai/dsh-rxlab-recommend':
+        specifier: workspace:^
+        version: link:../../api/rxlab-recommend
       '@deepseek-ai/dsh-rxlab-usage':
         specifier: workspace:^
         version: link:../../api/rxlab-usage

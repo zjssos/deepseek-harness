@@ -168,6 +168,7 @@
     { "path": "./packages/api/workspace-controller/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-catalog/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-collect/tsconfig.host.json" },
+    { "path": "./packages/api/rxlab-content/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-fitting/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-job/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-recommend/tsconfig.host.json" },
@@ -355,7 +356,6 @@
     { "path": "./packages/lsp/tool-lsp" },
     { "path": "./apps/cli" },
     { "path": "./apps/desktop-host" },
-    { "path": "./apps/desktop" },
-    { "path": "./packages/api/rxlab-content/tsconfig.host.json" }
+    { "path": "./apps/desktop" }
   ]
 }

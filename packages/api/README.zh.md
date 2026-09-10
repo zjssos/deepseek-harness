@@ -33,7 +33,10 @@ kind: "package-group"
 | [`workspace-controller/`](workspace-controller/README.zh.md) | 拥有 Workspace 变更与完整 Client Workspace 投影。 | `ctx.workspaceController` / `ctx.remote.workspace` |
 | [`workspace-files/`](workspace-files/README.zh.md) | 拥有有界的工作区文件访问——`stat`、分页 `read`、`list` 与 agent 写入的 `changes` 流——以及其上的 Client `file` 资源提供者。 | `ctx.workspaceFiles` / `ctx.remote.workspaceFiles` |
 | [`rxlab-catalog/`](rxlab-catalog/README.zh.md) | 拥有 `rxlab_catalog` 存储域之上的 rxlab 商品 Wiki master data；是自带 Client 装配的 rxlab 业务行。 | `ctx.catalogController` / `ctx.remote.rxlabCatalog` |
+| [`rxlab-content/`](rxlab-content/README.zh.md) | 拥有 rxlab 内容资产：`rxlab_content` 存储域之上按阶段打标签的知识词条与话术模板；是自带 Client 装配的 rxlab 业务行。 | `ctx.contentController` / `ctx.remote.rxlabContent` |
 | [`rxlab-fitting/`](rxlab-fitting/README.zh.md) | 拥有 rxlab 验光配镜模块：`rxlab_fitting` 存储域的分阶段验光记录、确定性处方推导引擎与类型化 `rxlabFitting` Remote；是自带 Client 装配的 rxlab 业务行。 | `ctx.fittingController` / `ctx.remote.rxlabFitting` |
+| [`rxlab-job/`](rxlab-job/README.zh.md) | 拥有 rxlab 工单：`rxlab_job` 存储域之上的 job、六阶段产物与生成好的指南，外加确定性指南组装器；是自带 Client 装配的 rxlab 业务行。 | `ctx.jobController` / `ctx.remote.rxlabJob` |
+| [`rxlab-recommend/`](rxlab-recommend/README.zh.md) | 拥有 rxlab 确定性候选引擎：在 fitting 处方与建议之上做框/片适配校验与排序，以类型化 `rxlabRecommend` Remote 暴露；是自带 Client 装配的 rxlab 业务行。 | `ctx.recommendController` / `ctx.remote.rxlabRecommend` |
 | [`rxlab-usage/`](rxlab-usage/README.zh.md) | 拥有 rxlab 用量记账：token-meter 投影之上的会话级与模块级总量，以类型化 `rxlabUsage` Remote 暴露；是自带 Client 装配的 rxlab 业务行。 | `ctx.usageController` / `ctx.remote.rxlabUsage` |
 
 Remote 调用沿 Client → Host 方向运行在应用共享的 Connection 之上。API Gateway 拥有 Remote 传输，各 controller 包分别拥有 Session、配置界面与 Workspace 行为。流式下载等不适合 Remote 调用的响应由功能包注册精确的 Connection Fetch 路由。
