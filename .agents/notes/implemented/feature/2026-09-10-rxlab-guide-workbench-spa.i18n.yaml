@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-rxlab-guide-workbench-spa.md
+2026-09-10-rxlab-guide-workbench-spa.md: ab08dacf156a5d9041d4da8f6a4ac61c0f48b848
+2026-09-10-rxlab-guide-workbench-spa.zh.md: 0346c1912197dad8fd4b5b0796167ac5046e8905

@@ -4,7 +4,8 @@ import { Navigate, useParams } from 'react-router-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { defaultModuleId, moduleById } from '@/modules/registry'
 
-function PanelFallback() {
+/** Lazy-panel fallback shared by the module route and the job-detail route. */
+export function PanelFallback() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start gap-4">

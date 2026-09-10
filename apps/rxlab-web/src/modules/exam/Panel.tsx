@@ -17,7 +17,7 @@ import {
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
@@ -35,9 +35,19 @@ import type {
   FittingDeriveValue,
   FittingRecord,
   FittingRecordSummary,
+  Prescription,
 } from '@deepseek-ai/dsh-rxlab-fitting/types'
-import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
+import type {
+  CompatibilityCheck,
+  CompatibilityReport,
+  ExamStageArtifact,
+  ExamStageInput,
+} from '@deepseek-ai/dsh-rxlab-job/types'
+import { useConnected } from '@/rxlab/use-sessions'
 import type { RxlabClientRuntime } from '@/rxlab/client'
+import { StageShell, type StageContext } from '@/modules/stages/StageShell'
+import { ReportChecks } from '@/modules/stages/ReportChecks'
+import { upsertStage } from '@/modules/stages/use-job'
 import { fittingDerive, fittingGet, fittingRemove, fittingUpsert, useFittingRecords } from './use-fitting'
 
 const USAGE_LABELS = { far: '远用', near: '近用', computer: '电脑/办公', outdoor: '户外', all: '全天' } as const
@@ -54,39 +64,13 @@ function formatTime(value: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function BootSkeleton() {
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-start gap-4">
-        <Skeleton className="size-12 rounded-xl" />
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-4 w-72" />
-        </div>
-      </div>
-      <Skeleton className="h-56 rounded-xl" />
-    </div>
-  )
+export default function ExamPanel(_props: ModulePanelProps) {
+  return <StageShell stage="exam">{context => <ExamWorkbench context={context} />}</StageShell>
 }
 
-export default function FittingPanel(_props: ModulePanelProps) {
-  const { phase, error, runtime } = useRxlabClient()
-  if (phase === 'booting' || runtime === undefined) return <BootSkeleton />
-  if (phase === 'failed') {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>验光配镜数据层启动失败</CardTitle>
-          <CardDescription className="whitespace-pre-wrap">{error}</CardDescription>
-        </CardHeader>
-      </Card>
-    )
-  }
-  return <FittingWorkbench runtime={runtime} />
-}
-
-/** The connected optometry workbench: record list, detail, and derive flows. */
-function FittingWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
+/** Stage-1 面板: 选取/录入验光记录，推导处方并写入工单阶段产出。 */
+function ExamWorkbench({ context }: { readonly context: StageContext }) {
+  const runtime = context.runtime
   const connected = useConnected(runtime)
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -171,6 +155,12 @@ function FittingWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
           新建验光记录
         </Button>
       </div>
+
+      {context.stageRecord?.checks === undefined ? null : (
+        <div className="flex shrink-0 items-start gap-2 border-b px-4 py-2">
+          <ReportChecks report={context.stageRecord.checks} />
+        </div>
+      )}
 
       {banner !== null ? (
         <div className="flex items-start gap-2 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
@@ -285,6 +275,7 @@ function FittingWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
       <DeriveReportDialog
         report={report}
         runtime={runtime}
+        context={context}
         onSaved={() => {
           setReport(undefined)
           list.reload()
@@ -644,15 +635,18 @@ function ExamFormDialog({
 function DeriveReportDialog({
   runtime,
   report,
+  context,
   onClose,
   onSaved,
 }: {
   readonly runtime: RxlabClientRuntime
   readonly report: { record: ExamRecordDraft; outcome: FittingDeriveValue } | undefined
+  readonly context: StageContext
   readonly onClose: () => void
   readonly onSaved: () => void
 }) {
   const [saving, setSaving] = useState(false)
+  const [adopting, setAdopting] = useState(false)
   const [frameMatches, setFrameMatches] = useState<string[]>([])
 
   // Frame geometry lives on the full catalog rows, not the summaries; fetch
@@ -698,6 +692,22 @@ function DeriveReportDialog({
       onSaved()
     } finally {
       setSaving(false)
+    }
+  }
+
+  const onAdopt = async (): Promise<void> => {
+    if (adopting) return
+    setAdopting(true)
+    try {
+      await upsertStage(runtime, context.job.id, 'exam', {
+        status: 'done',
+        inputs: { ...examInputsOf(record) },
+        outputs: { ...examArtifactOf(outcome.prescription) },
+        checks: examReportOf(outcome),
+      })
+      context.reload()
+    } finally {
+      setAdopting(false)
     }
   }
 
@@ -773,11 +783,15 @@ function DeriveReportDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" disabled={saving} onClick={() => { onClose() }}>
+          <Button variant="outline" disabled={saving || adopting} onClick={() => { onClose() }}>
             关闭
           </Button>
+          <Button variant="outline" disabled={saving || adopting} onClick={() => { void onAdopt() }}>
+            {adopting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            写入工单阶段产出
+          </Button>
           {prescription !== null ? (
-            <Button disabled={saving} onClick={() => { void onSave() }}>
+            <Button disabled={saving || adopting} onClick={() => { void onSave() }}>
               {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
               保存记录
             </Button>
@@ -960,5 +974,41 @@ function draftOf(values: Record<string, string>, report: (message: string) => vo
     ...(patient.length > 0 ? { patient } : {}),
     ...(date.length > 0 ? { date } : {}),
     stages,
+  }
+}
+
+/** Map one derive outcome onto the deterministic stage-1 compatibility report. */
+function examReportOf(outcome: FittingDeriveValue): CompatibilityReport {
+  const checks: CompatibilityCheck[] = outcome.issues.map(issue => ({
+    name: issue.stage ?? '处方',
+    status: issue.level,
+    detail: issue.message,
+  }))
+  const overall = checks.some(check => check.status === 'FAIL')
+    ? 'FAIL'
+    : checks.some(check => check.status === 'WARN') ? 'WARN' : 'OK'
+  return { overall, checks, summary: outcome.summary }
+}
+
+/** Map one derived prescription onto the stage-1 artifact the guide prints. */
+function examArtifactOf(prescription: Prescription | null): ExamStageArtifact {
+  if (prescription === null) return {}
+  return {
+    ...(prescription.pd === undefined ? {} : { pdMm: prescription.pd }),
+    sphereL: prescription.eyeL.sph,
+    sphereR: prescription.eyeR.sph,
+    ...(prescription.eyeL.cyl === undefined ? {} : { cylinderL: prescription.eyeL.cyl }),
+    ...(prescription.eyeR.cyl === undefined ? {} : { cylinderR: prescription.eyeR.cyl }),
+    prescriptionSummary: `右 ${readingText(prescription.eyeR)} / 左 ${readingText(prescription.eyeL)}`,
+  }
+}
+
+/** Map the exam draft onto the stage-1 inputs; a stored record contributes its id. */
+function examInputsOf(record: ExamRecordDraft): ExamStageInput {
+  const id = (record as { readonly id?: unknown }).id
+  return {
+    ...(typeof id === 'string' ? { fittingRecordId: id } : {}),
+    ...(record.date === undefined ? {} : { examDate: record.date }),
+    ...(record.patient === undefined ? {} : { notes: record.patient }),
   }
 }

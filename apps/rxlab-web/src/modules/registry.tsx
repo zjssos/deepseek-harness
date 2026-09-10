@@ -1,47 +1,142 @@
 import { lazy } from 'react'
 import {
-  BadgeCheck,
   BookOpen,
   Bot,
+  ClipboardList,
+  Eye,
   Glasses,
-  Image,
+  HeartHandshake,
+  PackageCheck,
+  ScanFace,
   Settings,
   ShoppingCart,
-  Workflow,
+  Wrench,
 } from 'lucide-react'
 
-import type { ModuleDefinition } from './types'
+import type { ModuleDefinition, ModuleGroup } from './types'
 
-const agentPanel = lazy(() => import('./agent/Panel'))
+const jobsPanel = lazy(() => import('./jobs/Panel'))
+export const jobDetailPanel = lazy(() => import('./jobs/JobDetail'))
+const examPanel = lazy(() => import('./exam/Panel'))
+const framePanel = lazy(() => import('./frame/Panel'))
+const lensPanel = lazy(() => import('./lens/Panel'))
+const fabricationPanel = lazy(() => import('./fabrication/Panel'))
+const pickupPanel = lazy(() => import('./pickup/Panel'))
+const aftercarePanel = lazy(() => import('./aftercare/Panel'))
+const contentPanel = lazy(() => import('./content/Panel'))
 const collectPanel = lazy(() => import('./collect/Panel'))
-const wikiPanel = lazy(() => import('./wiki/Panel'))
-const fittingPanel = lazy(() => import('./fitting/Panel'))
-const recommendPanel = lazy(() => import('./recommend/Panel'))
-const renderPanel = lazy(() => import('./render/Panel'))
-const flowPanel = lazy(() => import('./flow/Panel'))
+const agentPanel = lazy(() => import('./agent/Panel'))
 const settingsPanel = lazy(() => import('./settings/Panel'))
 
 /**
- * Workbench module manifest. A module becomes usable by swapping its lazy
- * `Panel` for a real implementation and later registering the host-side tool /
- * data rows that back it. Copy is zh until the app gains a locale dictionary.
+ * Workbench module manifest. The primary rail is the work-order overview plus
+ * the six-stage workflow; the secondary rail carries content/collect/agent/
+ * settings tools. Copy is zh until the app gains a locale dictionary.
  */
 export const MODULES: readonly ModuleDefinition[] = [
   {
-    id: 'agent',
-    label: '会话 Agent',
-    tagline: '与配镜 agent 对话、查看运行过程与设置',
+    id: 'jobs',
+    label: '工单总览',
+    tagline: '消费者画像、阶段进度、配镜指南与用量',
     description:
-      'agent 会话能力：SPA 内嵌 headless Cordis 客户端数据层（由 dsh rxlab profile 的 modules 行提供运行时与 /plugins 数据行），三栏工作台完成会话管理、消息收发、模型选择与 API key 配置。',
+      '工单总览：以工单为单位的配镜编排域（rxlab_job）。创建工单录入消费者画像，逐阶段写入确定性与人工产出，最终组装结构化配镜指南并可导出 HTML。',
     scope: [
-      '会话列表、新建、打开、重命名、归档（隐藏）与分支（Fork）',
-      '消息发送/停止、运行/队列态与队列项操作',
-      '消息渲染与工具摘要卡、历史分页',
-      '模型目录与选择、API Key 凭据配置',
+      '工单列表、创建、编辑消费画像与对客价格',
+      '六阶段进度总览与阶段面板跳转',
+      '生成并渲染配镜指南、导出 HTML',
+      '绑定工单会话、查看 token 与成本用量',
     ],
-    icon: Bot,
+    icon: ClipboardList,
     status: 'active',
-    panel: agentPanel,
+    group: 'stage',
+    panel: jobsPanel,
+  },
+  {
+    id: 'exam',
+    label: '验光',
+    tagline: '录入验光事实，推导处方与配镜建议',
+    description:
+      '验光阶段：复用 rxlab_fitting 分阶段验光记录与确定性推导引擎，得出处方、折射率/镜片类型/镜架尺寸带建议，并把处方与校验结果写入工单阶段产出。',
+    scope: ['分阶段验光记录录入与检索', '处方推导与过程校验（OK/WARN/FAIL）', '写入工单验光阶段产出'],
+    icon: Glasses,
+    status: 'active',
+    group: 'stage',
+    stage: 'exam',
+    panel: examPanel,
+  },
+  {
+    id: 'frame',
+    label: '选框',
+    tagline: '按处方目标校验候选镜架尺寸与框型',
+    description:
+      '选框阶段：从商品参照库或人工录入候选镜架，调用 rxlab-recommend 的 validateFrame / suggest 按处方瞳距与尺寸带做确定性校验与排序，写入选框阶段产出。',
+    scope: ['候选镜架参照库选取与人工录入', '移心量 / 尺寸带 / 框型一致性校验', '推荐排序与选择写入工单阶段'],
+    icon: ScanFace,
+    status: 'active',
+    group: 'stage',
+    stage: 'frame',
+    panel: framePanel,
+  },
+  {
+    id: 'lens',
+    label: '选片',
+    tagline: '按处方与用途校验候选镜片折射率与功能',
+    description:
+      '选片阶段：从商品参照库或人工录入候选镜片，调用 rxlab-recommend 的 validateLens / suggest 校验折射率、片型与功能适配，写入选片阶段产出。',
+    scope: ['候选镜片参照库选取与人工录入', '折射率 / 片型 / 功能适配校验', '推荐排序与选择写入工单阶段'],
+    icon: Eye,
+    status: 'active',
+    group: 'stage',
+    stage: 'lens',
+    panel: lensPanel,
+  },
+  {
+    id: 'fabrication',
+    label: '加工',
+    tagline: '登记加工委托、镀膜清单与交期',
+    description: '加工阶段（M1 壳）：登记加工方、边缘处理、镀膜与交期，产出完成后写入工单阶段产出。',
+    scope: ['加工投入登记', '产出与交期记录', '阶段清单展示'],
+    icon: Wrench,
+    status: 'active',
+    group: 'stage',
+    stage: 'fabrication',
+    panel: fabricationPanel,
+  },
+  {
+    id: 'pickup',
+    label: '取镜',
+    tagline: '记录取镜交期、调整与交付人',
+    description: '取镜阶段（M1 壳）：登记预约与实际取镜时间、调整记录与交付人，写入工单阶段产出。',
+    scope: ['取镜预约登记', '调整与交付记录', '阶段清单展示'],
+    icon: PackageCheck,
+    status: 'active',
+    group: 'stage',
+    stage: 'pickup',
+    panel: pickupPanel,
+  },
+  {
+    id: 'aftercare',
+    label: '售后',
+    tagline: '记录保修与随访，沉淀护理清单',
+    description: '售后阶段（M1 壳）：登记保修期限、护理要点与随访时间，写入工单阶段产出。',
+    scope: ['保修 / 随访登记', '护理要点交代记录', '阶段清单展示'],
+    icon: HeartHandshake,
+    status: 'active',
+    group: 'stage',
+    stage: 'aftercare',
+    panel: aftercarePanel,
+  },
+  {
+    id: 'content',
+    label: '内容管理',
+    tagline: '参照库、知识与话术',
+    description:
+      '内容管理：参照库复用 rxlab_catalog（镜架 / 镜片 / 商品 master data，保留 CRUD）；知识与话术由 rxlab_content 域承载，按阶段与 kind 过滤。',
+    scope: ['参照库条目 CRUD 与检索', '知识 / 话术条目 CRUD、阶段打标', '为阶段面板提供数据来源'],
+    icon: BookOpen,
+    status: 'active',
+    group: 'tool',
+    panel: contentPanel,
   },
   {
     id: 'collect',
@@ -56,70 +151,25 @@ export const MODULES: readonly ModuleDefinition[] = [
     ],
     icon: ShoppingCart,
     status: 'active',
+    group: 'tool',
     panel: collectPanel,
   },
   {
-    id: 'wiki',
-    label: '商品 Wiki',
-    tagline: '查询与沉淀商品、镜架、镜片信息',
+    id: 'agent',
+    label: '会话 Agent',
+    tagline: '与配镜 agent 对话、查看运行过程与设置',
     description:
-      '商品 Wiki 模块：维护与检索结构化的商品 / 镜架 / 镜片 master data（rxlab_catalog 持久域，经 rxlabCatalog Remote 直连读写），作为后续验光推荐的数据底座。',
+      'agent 会话能力：SPA 内嵌 headless Cordis 客户端数据层（由 dsh rxlab profile 的 modules 行提供运行时与 /plugins 数据行），三栏工作台完成会话管理、消息收发、模型选择与 API key 配置。',
     scope: [
-      '按镜架 / 镜片 / 采集商品过滤与检索',
-      '新增、编辑、删除与详情查看',
-      '刷新持久：数据落盘 $DSH_HOME/storages-rxlab/ 的 catalog 域',
+      '会话列表、新建、打开、重命名、归档（隐藏）与分支（Fork）',
+      '消息发送/停止、运行/队列态与队列项操作',
+      '消息渲染与工具摘要卡、历史分页',
+      '模型目录与选择、API Key 凭据配置',
     ],
-    icon: BookOpen,
+    icon: Bot,
     status: 'active',
-    panel: wikiPanel,
-  },
-  {
-    id: 'fitting',
-    label: '验光配镜',
-    tagline: '验光数据录入、处方计算、适配建议',
-    description:
-      '验光配镜模块：按验光流程录入分阶段验光记录（问诊/客观/主觉/试戴/瞳距等，rxlab_fitting 持久域，经 rxlabFitting Remote 直连读写），由确定性推导引擎计算处方并给出折射率、镜片类型、镜架尺寸带与无框可行性建议。',
-    scope: [
-      '分阶段验光记录的录入、检索与删除',
-      '处方计算（球柱轴/ADD/瞳距）与过程校验提示',
-      '折射率 / 镜片类型 / 镜架尺寸带建议与 Wiki 镜架匹配',
-    ],
-    icon: Glasses,
-    status: 'active',
-    panel: fittingPanel,
-  },
-  {
-    id: 'recommend',
-    label: '推荐校验',
-    tagline: '按验光结果与库存校验并推荐组合',
-    description:
-      '推荐校验模块：在候选商品与库存范围内按处方与规则校验可行性，给出推荐组合与理由。',
-    scope: ['候选范围筛选', '可行性校验', '推荐组合与理由'],
-    icon: BadgeCheck,
-    status: 'planned',
-    panel: recommendPanel,
-  },
-  {
-    id: 'render',
-    label: '效果图',
-    tagline: '生成佩戴 / 商品效果图并展示',
-    description:
-      '效果图模块：为推荐组合生成佩戴或商品效果图，输出可视化产物并留存在流程结果中。',
-    scope: ['效果图任务', '产物预览', '结果留存'],
-    icon: Image,
-    status: 'planned',
-    panel: renderPanel,
-  },
-  {
-    id: 'flow',
-    label: '流程 / 结果',
-    tagline: '整条配镜流程状态与结果汇总',
-    description:
-      '流程结果模块：以交互结果页汇总一次配镜请求的完整链路状态与各模块产物，便于复盘与流转。',
-    scope: ['流程状态总览', '跨模块产物汇总', '交互结果页'],
-    icon: Workflow,
-    status: 'planned',
-    panel: flowPanel,
+    group: 'tool',
+    panel: agentPanel,
   },
   {
     id: 'settings',
@@ -133,6 +183,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     ],
     icon: Settings,
     status: 'active',
+    group: 'tool',
     panel: settingsPanel,
   },
 ]
@@ -142,7 +193,12 @@ export function moduleById(id: string): ModuleDefinition | undefined {
   return MODULES.find(module => module.id === id)
 }
 
+/** Modules of one rail group, in manifest order. */
+export function modulesByGroup(group: ModuleGroup): readonly ModuleDefinition[] {
+  return MODULES.filter(module => module.group === group)
+}
+
 /** The rail's first entry; used as the index redirect target. */
 export function defaultModuleId(): string {
-  return MODULES[0]?.id ?? 'agent'
+  return MODULES[0]?.id ?? 'jobs'
 }

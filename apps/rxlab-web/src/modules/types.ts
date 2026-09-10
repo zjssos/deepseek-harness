@@ -1,8 +1,16 @@
 import type { LucideIcon } from 'lucide-react'
 import type { ComponentType, LazyExoticComponent } from 'react'
 
+import type { StageId } from '@deepseek-ai/dsh-rxlab-job/types'
+
 /** Workbench availability of one rail module. */
 export type ModuleStatus = 'planned' | 'active'
+
+/**
+ * Which sidebar group a module belongs to: the primary six-stage + 工单 nav, or
+ * the secondary capabilities rail.
+ */
+export type ModuleGroup = 'stage' | 'tool'
 
 /** Props every module panel receives from the workspace host. */
 export interface ModulePanelProps {
@@ -21,5 +29,9 @@ export interface ModuleDefinition {
   readonly scope: readonly string[]
   readonly icon: LucideIcon
   readonly status: ModuleStatus
+  /** Primary stage rail vs secondary tool rail. */
+  readonly group: ModuleGroup
+  /** The workbench stage this panel edits; absent for 工单总览 and tools. */
+  readonly stage?: StageId
   readonly panel: LazyExoticComponent<ComponentType<ModulePanelProps>>
 }
