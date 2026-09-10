@@ -49,6 +49,8 @@ Rates are cost per token in `pricingCurrency`. With no `pricingCurrency` or `rou
 | [`src/types.ts`](src/types.ts) | Browser-safe wire types for the namespace |
 | [`src/client/index.ts`](src/client/index.ts) | Self-mounting Client contribution (`dsh.client` row) |
 
+**Runtime invariant:** No runtime invariant companion is published because usage derives from the authoritative session/projection feed and the durable log, so no independent observation can diverge.
+
 ## Model Experience
 
 ### Usage accounting

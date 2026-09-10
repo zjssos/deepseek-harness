@@ -30,6 +30,8 @@ The rxlab profile composes one row, `rxlab-catalog` (`@deepseek-ai/dsh-rxlab-cat
 
 Wire and durable types live in `./types` (browser-safe JSON, no runtime code); the zod schemas live in the Host-only `src/domain.ts`.
 
+**Runtime invariant:** No runtime invariant companion is published because the `rxlab_catalog` durable schema owns every record relationship and extraction is a pure function, so no independent observation can diverge.
+
 -----
 
 <a id="model-experience"></a>

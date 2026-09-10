@@ -36,6 +36,8 @@ rxlab profile 组合一个数据行 `rxlab-job`（`@deepseek-ai/dsh-rxlab-job`�
 
 Wire 与持久类型在 `./types`（浏览器安全 JSON，无运行时代码）；zod schema 在 Host-only 的 `src/domain.ts`；纯指南组装器在 `src/guide.ts`；模型可见工具在 `./tools`。
 
+**运行时不变式：** 不发布运行时不变式伴生包（companion）：`rxlab_job` 持久 schema 拥有 job/stage/guide 关系，指南组装器是纯函数，没有可独立观测而发散的关系。
+
 <a id="model-experience"></a>
 ## 模型体验
 

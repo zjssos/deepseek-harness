@@ -35,6 +35,8 @@ The rxlab profile composes one data row, `rxlab-job` (`@deepseek-ai/dsh-rxlab-jo
 
 Wire and durable types live in `./types` (browser-safe JSON, no runtime code); the zod schemas live in the Host-only `src/domain.ts`; the pure guide assembler lives in `src/guide.ts`; the model-facing tools live in `./tools`.
 
+**Runtime invariant:** No runtime invariant companion is published because the `rxlab_job` durable schema owns the job/stage/guide relationships and the guide assembler is a pure function, so no independent observation can diverge.
+
 ## Model Experience
 
 ### Work-order tools

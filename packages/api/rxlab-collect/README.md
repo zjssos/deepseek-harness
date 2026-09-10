@@ -32,6 +32,8 @@ The JD collector visits the canonical mobile page `item.m.jd.com/product/<sku>`,
 
 Wire and durable types live in `./types` (browser-safe JSON, no runtime code); the zod schemas live in the Host-only `src/domain.ts`; pure parsing/normalization helpers live in `src/executor/parse.ts` and the pure snapshot/receipt formatting lives in `src/browse/snapshot.ts` + `src/tools.ts` (unit-covered, no network).
 
+**Runtime invariant:** No runtime invariant companion is published because the `rxlab_collect` durable schema owns the link/capture/batch relationships and capture runs through the existing executor seam, so no independent observation can diverge.
+
 -----
 
 <a id="model-experience"></a>

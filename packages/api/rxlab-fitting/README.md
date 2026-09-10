@@ -35,6 +35,8 @@ The rxlab profile composes one row, `rxlab-fitting` (`@deepseek-ai/dsh-rxlab-fit
 
 Wire and durable types live in `./types` (browser-safe JSON, no runtime code); the zod schemas live in the Host-only `src/domain.ts`; the pure engine lives in `./prescription`.
 
+**Runtime invariant:** No runtime invariant companion is published because the `rxlab_fitting` durable schema owns every record relationship and the derivation engine is a pure function, so no independent observation can diverge.
+
 ## Model Experience
 
 ### Fitting data

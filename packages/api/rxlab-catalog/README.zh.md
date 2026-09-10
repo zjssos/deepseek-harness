@@ -30,6 +30,8 @@ rxlab profile 组合一行 `rxlab-catalog`（`@deepseek-ai/dsh-rxlab-catalog`）
 
 Wire 与持久类型在 `./types`（浏览器安全 JSON、无运行时代码）；zod schema 在仅 Host 侧的 `src/domain.ts`。
 
+**运行时不变式：** 不发布运行时不变式伴生包（companion）：`rxlab_catalog` 持久 schema 拥有全部记录关系，抽取是纯函数，没有可独立观测而发散的关系。
+
 -----
 
 <a id="model-experience"></a>

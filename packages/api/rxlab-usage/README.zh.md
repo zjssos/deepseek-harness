@@ -51,6 +51,8 @@ kind: "package-reference"
 | [`src/types.ts`](src/types.ts) | namespace 的浏览器安全 wire 类型 |
 | [`src/client/index.ts`](src/client/index.ts) | 自挂载 Client 贡献（`dsh.client` 行） |
 
+**运行时不变式：** 不发布运行时不变式伴生包（companion）：用量由权威的 session/projection 与持久日志推导，没有可独立观测而发散的关系。
+
 <a id="model-experience"></a>
 ## 模型体验
 

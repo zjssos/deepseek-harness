@@ -36,6 +36,8 @@ rxlab profile 组合一行 `rxlab-fitting`（`@deepseek-ai/dsh-rxlab-fitting`）
 
 Wire 与持久类型在 `./types`（浏览器安全 JSON，无运行时代码）；zod schema 在 Host-only 的 `src/domain.ts`；纯推导引擎在 `./prescription`。
 
+**运行时不变式：** 不发布运行时不变式伴生包（companion）：`rxlab_fitting` 持久 schema 拥有全部记录关系，推导引擎是纯函数，没有可独立观测而发散的关系。
+
 <a id="model-experience"></a>
 ## 模型体验
 

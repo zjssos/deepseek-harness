@@ -32,6 +32,8 @@ JD 采集器访问 canonical 移动页 `item.m.jd.com/product/<sku>`:读清洗�
 
 Wire 与持久类型在 `./types`(浏览器安全 JSON,无运行时代码);zod 在 Host 侧 `src/domain.ts`;纯解析/规范化助手在 `src/executor/parse.ts`,快照/回执的纯格式化在 `src/browse/snapshot.ts` + `src/tools.ts`(有单测,不触网)。
 
+**运行时不变式：** 不发布运行时不变式伴生包（companion）：`rxlab_collect` 持久 schema 拥有 link/capture/batch 关系，抓取走既有 executor 接缝，没有可独立观测而发散的关系。
+
 -----
 
 <a id="model-experience"></a>
