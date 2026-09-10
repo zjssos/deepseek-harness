@@ -6,7 +6,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 概要
+## 概述
 
 `@deepseek-ai/dsh-rxlab-fitting` 拥有 rxlab 验光配镜模块的数据。Host 侧它提供 `ctx.fittingController` 服务和生成的 `ctx.remote.rxlabFitting` namespace；该 namespace 读写 `rxlab_fitting` 存储域（version 1、per-record 布局）中的分阶段验光记录，其 `derive` RPC 对草稿运行确定性处方推导引擎且不落盘。Client 侧本包是 `dsh.client` 行，其 `/client` bundle 自行 mount 该 namespace，因此 rxlab SPA 恰好在组合 rxlab 业务数据处启动 fitting。本包刻意不加入平台 `api-remotes` 装配：fitting 记录是 rxlab 业务数据，不是通用 Host 能力。
 
@@ -39,7 +39,15 @@ Wire 与持久类型在 `./types`（浏览器安全 JSON，无运行时代码）
 <a id="model-experience"></a>
 ## 模型体验
 
-无：fitting 模块是浏览器与 Host 数据，不注册 prompt、工具或 session 事件。
+### 验光数据
+
+#### 模型可见什么
+
+无。本包不注册工具、不注入提示词、不追加会话事件；`rxlab_fitting` 记录位于 `ctx.remote.rxlabFitting` 与 storage domain 之后，模型只能经消费方自身有文档说明的界面触达（今天是 rxlab SPA）。
+
+#### Token 影响
+
+零：本包没有文本进入任何模型请求。
 
 #### KV Cache 影响
 
@@ -54,6 +62,11 @@ Wire 与持久类型在 `./types`（浏览器安全 JSON，无运行时代码）
 - 镜片/镜架建议是简化惯例，不替代磨边设备或验光师复核。
 
 <a id="dev-note"></a>
-## 开发备注
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
 
 无。
+
+</details>

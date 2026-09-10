@@ -6,7 +6,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 概要
+## 概述
 
 `@deepseek-ai/dsh-rxlab-recommend` 拥有 rxlab 工作台的确定性候选校验与匹配。Host 侧它提供 `ctx.recommendController` 服务与生成的 `ctx.remote.rxlabRecommend` 命名空间（`validateFrame`、`validateLens`、`suggest`）；本包无存储域、从不落盘。它从 `@deepseek-ai/dsh-rxlab-fitting/types` 消费 `Prescription` 与 `FittingRecommendation` 作为目标，对候选镜架与镜片做校验——不重新推导处方。本包注册 `rxlab-recommend-rules` 设置命名空间，使折射率阶梯、FPD 尺寸带、单眼移心上限与柱镜升档阈值可在设置面编辑而无需改代码。Client 侧它是 `dsh.client` 行，其 `/client` bundle 自行挂载命名空间，因此 rxlab SPA 恰好在组合 rxlab 业务数据处装载 recommend；本包刻意不加入平台 `api-remotes` 装配。
 
@@ -16,6 +16,7 @@ kind: "package-reference"
 - [使用本包](#use-this-package)
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
@@ -30,6 +31,7 @@ kind: "package-reference"
 
 `suggest` 校验每个候选，按「报告 + 靠近尺寸带 + 折射率余量 + 功能覆盖 + `shapePref`/`rimTypePref` 风格匹配」打分，并按得分降序返回镜架与镜片（同分保持输入顺序）及排序理由。
 
+<a id="use-this-package"></a>
 ## 使用本包
 
 rxlab profile 组装一个 host 行 `rxlab-recommend`（`@deepseek-ai/dsh-rxlab-recommend`），`guide` preset 组装工具行（`@deepseek-ai/dsh-rxlab-recommend/tools`）。Host Loader 激活 `RecommendController`：它向设置 provider 注册 `rxlab-recommend-rules`（restart 生效），并向 Typert Gateway 注册 `rxlabRecommend` 命名空间。SPA 的 headless client boot 会激活本包自身的 `/client` bundle（由 modules node half 在 `/plugins` 下提供），其 `apply` mount 生成的 Remote contribution，于是浏览器内 `remote.rxlabRecommend.validateFrame/validateLens/suggest` 即可调用。
@@ -61,3 +63,13 @@ rxlab profile 组装一个 host 行 `rxlab-recommend`（`@deepseek-ai/dsh-rxlab-
 - 当前由引擎与 controller 的包内测试承担；尚无通过 shipped `cordis.yml` 的 REAL-composition 启动测试，与 fitting、collect 行一致。
 - Client bundle 仅由装配级 client 检查覆盖，没有包内 spec（fitting 与 collect 行相同）。
 - 不发布 invariant 伴随包：校验是候选、处方、建议与当前规则的纯函数，不存在可独立发散的观测。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+无。
+
+</details>

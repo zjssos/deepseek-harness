@@ -6,7 +6,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 概要
+## 概述
 
 `@deepseek-ai/dsh-rxlab-job` 拥有 rxlab 配镜指南工作台的工单。Host 侧它提供 `ctx.jobController` 服务和生成的 `ctx.remote.rxlabJob` namespace；该 namespace 读写 `rxlab_job` 存储域（version 1、per-record 布局）中的每个消费者一个工单、六个阶段性行与组装后的指南。`generateGuide` 把已存阶段产物与注入的内容域话术映射折叠为结构化 `GuideDocument`，不调用模型。本包还提供模型可见的 `job_read` / `job_write_stage` / `guide_generate` 工具，以及一个 `dsh.client` 行，其 `/client` bundle 自行 mount 该 namespace，因此 rxlab SPA 恰好在组合 rxlab 业务数据处启动工单。本包刻意不加入平台 `api-remotes` 装配：工单是 rxlab 业务数据，不是通用 Host 能力。
 
@@ -39,9 +39,15 @@ Wire 与持久类型在 `./types`（浏览器安全 JSON，无运行时代码）
 <a id="model-experience"></a>
 ## 模型体验
 
-`guide` preset 挂载三个工具。`job_read` 列出工单，或打开一个工单及其阶段与指南。`job_write_stage` 创建或更新一个阶段行；其必需的 `stage` 参数是后续把会话轮次归到阶段的锚点。`guide_generate` 组装并返回指南章节。三者让模型把工单推进过六个阶段并产出消费指南。
+### 工单工具
 
-preset 的 persona 承载工作流文本；工具自身描述保持任务范围。本包不新增 session 事件类型：一轮所属的阶段可由持久化的 `tool/call` 参数推导。
+#### 模型可见什么
+
+`guide` preset 挂载三个工具。`job_read` 列出工单，或打开一个工单及其阶段与指南。`job_write_stage` 创建或更新一个阶段行；其必需的 `stage` 参数是后续把会话轮次归到阶段的锚点。`guide_generate` 组装并返回指南章节。三者让模型把工单推进过六个阶段并产出消费指南。preset 的 persona 承载工作流文本；工具自身描述保持任务范围。本包不新增 session 事件类型：一轮所属的阶段可由持久化的 `tool/call` 参数推导。
+
+#### Token 影响
+
+三个工具 schema 与 persona 工作流文本进入组装在 `guide` preset 上会话的每次模型请求；仅挂载数据行不向模型请求添加文本。
 
 #### KV Cache 影响
 
@@ -57,6 +63,11 @@ preset 的 persona 承载工作流文本；工具自身描述保持任务范围�
 - `oldRx` 是紧凑自持 JSON 映射；未建模从 fitting 域处方 schema 的迁移。
 
 <a id="dev-note"></a>
-## 开发备注
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
 
 无。
+
+</details>

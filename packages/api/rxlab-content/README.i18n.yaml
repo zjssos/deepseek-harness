@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/api/rxlab-content/README.md
 README.md: 1862288406e3b2c62f6e80a075aabfea3c0922c3
-README.zh.md: 2aec2e954e61ab4884dbb08e92f5f6956e004ccf
+README.zh.md: 1733748d90a2d8d642fad9a272540c3c7446efd5

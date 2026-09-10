@@ -6,7 +6,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 概要
+## 概述
 
 `@deepseek-ai/dsh-rxlab-content` 拥有 rxlab 工作台的知识词条与话术内容。Host 侧它提供 `ctx.contentController` 服务和生成的 `ctx.remote.rxlabContent` namespace；该 namespace 读写 `rxlab_content` 存储域（version 1、per-record 布局），其单张 `items` 表存放 `kind: 'knowledge' | 'script'` 条目，可打上可选的阶段标签。Client 侧本包是 `dsh.client` 行，其 `/client` bundle 自行 mount 该 namespace，因此 rxlab SPA 恰好在组合 rxlab 业务数据处启动 content。本包刻意不加入平台 `api-remotes` 装配：内容条目是 rxlab 业务数据，不是通用 Host 能力。
 

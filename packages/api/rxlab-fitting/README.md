@@ -37,7 +37,15 @@ Wire and durable types live in `./types` (browser-safe JSON, no runtime code); t
 
 ## Model Experience
 
-None, as the fitting module is browser and Host data and registers no prompt, tool, or session event.
+### Fitting data
+
+#### What the model sees
+
+Nothing. The package registers no tools, injects no prompts, and appends no session events; the `rxlab_fitting` records live behind `ctx.remote.rxlabFitting` and the storage domain, which a model reaches only through a consumer's own documented surface (today the rxlab SPA).
+
+#### Token effect
+
+Zero: no text from this package enters any model request.
 
 #### KV Cache effect
 
@@ -50,6 +58,12 @@ No direct effect; fitting mutations do not alter model requests.
 - No REAL-composition controller test yet, matching the catalog and collect rows; the engine and schemas carry the package tests today.
 - The lens/frame advice is a simplified convention, not a fitting-machine or optometrist replacement.
 
-## Dev Note
+<a id="dev-note"></a>
+### Dev Note
 
-No notes.
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

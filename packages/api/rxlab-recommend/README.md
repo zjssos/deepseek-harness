@@ -16,6 +16,7 @@ English | [中文](README.zh.md)
 - [Use this package](#use-this-package)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
@@ -59,3 +60,13 @@ Stable within a session: the tool schemas mount once at session composition, so 
 - The engine and controller carry the package tests; there is no REAL-composition boot through a shipped `cordis.yml` yet, matching the fitting and collect rows.
 - The Client bundle is only covered by the assembly-level client checks, not a package spec (the fitting and collect rows share this state).
 - No invariant companion is published: a validation is a pure function of the candidate, prescription, advice, and current rules, so no independent observation can diverge.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

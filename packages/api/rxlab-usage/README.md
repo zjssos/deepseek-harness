@@ -16,6 +16,7 @@ English | [中文](README.zh.md)
 - [Understanding the implementation](#understanding-the-implementation)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Use this package
 
@@ -50,7 +51,19 @@ Rates are cost per token in `pricingCurrency`. With no `pricingCurrency` or `rou
 
 ## Model Experience
 
-No model-visible surface: the row consumes host projection events and session logs and serves the SPA; it adds no prompts, tools, or request text to any session.
+### Usage accounting
+
+#### What the model sees
+
+Nothing. The row consumes host projection events and session logs and serves the SPA; it adds no prompts, tools, or request text to any session. The `rxlabUsage` totals live behind `ctx.remote.rxlabUsage` and the storage domain, which a model reaches only through the SPA.
+
+#### Token effect
+
+Zero: no text from this package enters any model request.
+
+#### KV Cache effect
+
+Independent: usage reads never touch request prefixes, so nothing here can invalidate provider cache reuse.
 
 ## Known Limitations and Deferred Work
 
@@ -59,3 +72,13 @@ No model-visible surface: the row consumes host projection events and session lo
 - A turn with several provider/model routes carries one shared bucket set, so its cost cannot be attributed per route; such a turn contributes to totals but makes the job and stage `cost` absent.
 - Durable accounting starts when this row observes projection changes: usage streamed before the row existed (or while the profile was off) is not backfilled for the module/session tables. `jobUsage` reads the whole session log, so it does backfill job totals for a session the store can still read.
 - The subdirectory → module map is duplicated between this package and the SPA (`apps/rxlab-web/src/rxlab/session-cwd.ts`); the two must move together.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -6,7 +6,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 概要
+## 概述
 
 `@deepseek-ai/dsh-rxlab-usage` 拥有 rxlab 的用量记账。Host 侧它提供 `ctx.usageController` 服务与生成的 `ctx.remote.rxlabUsage` namespace；该 namespace 读写 `rxlab_usage` 存储域（version 2、per-record 布局、兼容 version 1）中的会话级总量、模块级聚合与工单级 job/stage 用量。控制器监听 session-projection 变更流中的客户端可见 `tokenUsage` 单元（由 base bundle 的 token-meter 行组装），把每次变更的会话按 cwd 相对工作空间根目录归到工作台模块，并持久化记录会话总量与重算后的模块聚合。对工单绑定的 agent 会话，它把持久日志切成完整轮次、取每轮精确 provider 用量，按最近的 `job_write_stage` 工具调用把轮次归到对应阶段，再乘配置的路由 token 费率得到精确成本。Client 侧本包是 `dsh.client` 行，其 `/client` bundle 自行 mount 该 namespace，因此 rxlab SPA 恰好在组合 rxlab 业务数据处启动 usage。本包刻意不加入平台 `api-remotes` 装配：用量是 rxlab 业务数据，不是通用 Host 能力。
 
@@ -16,6 +16,7 @@ kind: "package-reference"
 - [理解实现](#understanding-the-implementation)
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 <a id="use-this-package"></a>
 ## 使用本包
@@ -53,7 +54,19 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无模型可见面：本行消费 host 投影事件与会话日志并服务 SPA，不向任何会话增加提示词、工具或请求文本。
+### 用量记账
+
+#### 模型可见什么
+
+无。本行消费 host 投影事件与会话日志并服务 SPA，不向任何会话增加提示词、工具或请求文本。`rxlabUsage` 总量位于 `ctx.remote.rxlabUsage` 与 storage domain 之后，模型只能经 SPA 触达。
+
+#### Token 影响
+
+零：本包没有文本进入任何模型请求。
+
+#### KV Cache 影响
+
+独立：用量读取不触碰请求前缀，这里没有任何东西会使提供方缓存失效。
 
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延期工作
@@ -63,3 +76,13 @@ kind: "package-reference"
 - 一轮若跨多个 provider/model 路由，只共享一份桶数据，无法按路由拆分成本；该轮计入总量，但使工单与阶段的 `cost` 省略。
 - 持久记账从本行观察到投影变更开始：行存在之前（或 profile 停机期间）产生的用量不会回填到会话/模块表。`jobUsage` 读取整段会话日志，因此对仍可读取的会话会回填工单总量。
 - 子目录 → 模块映射在本包与 SPA（`apps/rxlab-web/src/rxlab/session-cwd.ts`）各有一份，须同步演进。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+无。
+
+</details>

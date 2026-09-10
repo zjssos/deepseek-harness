@@ -37,9 +37,15 @@ Wire and durable types live in `./types` (browser-safe JSON, no runtime code); t
 
 ## Model Experience
 
-The `guide` preset mounts three tools. `job_read` lists work orders or opens one job with its stages and guide. `job_write_stage` creates or updates one stage row; its required `stage` argument is the anchor that later attributes a session round to a stage. `guide_generate` assembles and returns the guide chapters. Together they let the model move a work order through the six stages and produce the consumer guide.
+### Work-order tools
 
-The preset's persona carries the workflow text; the tools' own descriptions stay task-scoped. The package adds no session event type: the stage a round belongs to is derivable from the persisted `tool/call` arguments.
+#### What the model sees
+
+The `guide` preset mounts three tools. `job_read` lists work orders or opens one job with its stages and guide. `job_write_stage` creates or updates one stage row; its required `stage` argument is the anchor that later attributes a session round to a stage. `guide_generate` assembles and returns the guide chapters. Together they let the model move a work order through the six stages and produce the consumer guide. The preset's persona carries the workflow text; the tools' own descriptions stay task-scoped. The package adds no session event type: the stage a round belongs to is derivable from the persisted `tool/call` arguments.
+
+#### Token effect
+
+The three tool schemas and the persona workflow text enter every model request of a session composed on the `guide` preset; mounting the data row alone adds no model request text.
 
 #### KV Cache effect
 
@@ -53,6 +59,12 @@ The preset's persona carries the workflow text; the tools' own descriptions stay
 - No REAL-composition controller boot test yet: the storage-domain-backed controller spec and the pure domain/assembler specs carry the package coverage today.
 - `oldRx` is a compact self-contained JSON map; no migration from the fitting domain's prescription schema is modeled.
 
-## Dev Note
+<a id="dev-note"></a>
+### Dev Note
 
-No notes.
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
