@@ -68,6 +68,7 @@
     { "path": "./packages/api/rxlab-catalog/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-collect/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-fitting/tsconfig.client.json" },
+    { "path": "./packages/api/rxlab-job/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-usage/tsconfig.client.json" },
     { "path": "./packages/extensions/cordis-client-runner" },
     { "path": "./packages/extensions/ui-cordis" },
