@@ -134,6 +134,7 @@
       "@deepseek-ai/dsh-rxlab-app/workspace-paths": ["./packages/bundle/rxlab-app/src/workspace-paths.ts"],
       "@deepseek-ai/dsh-rxlab-collect/browser": ["./packages/api/rxlab-collect/src/browser.ts"],
       "@deepseek-ai/dsh-rxlab-collect/tools": ["./packages/api/rxlab-collect/src/tools.ts"],
+      "@deepseek-ai/dsh-rxlab-fitting/types": ["./packages/api/rxlab-fitting/src/types.ts"],
       "@deepseek-ai/dsh-client-*/client": ["./packages/client/*/src/client"],
       // One wildcard maps every @deepseek-ai/dsh-<name> to its source. Package
       // dir names are unique across groups, so first-on-disk-wins resolution is
