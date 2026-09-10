@@ -1,0 +1,24 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/index.ts",
+    "src/domain.ts",
+    "src/guide.ts",
+    "src/tools.ts",
+    "src/types.ts"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../core/tools" },
+    { "path": "../../storage/storage-domain" },
+    { "path": "../../typert/protocol" },
+    { "path": "../../util/brand" },
+    { "path": "../../util/values" }
+  ]
+}

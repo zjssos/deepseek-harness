@@ -169,6 +169,7 @@
     { "path": "./packages/api/rxlab-catalog/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-collect/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-fitting/tsconfig.host.json" },
+    { "path": "./packages/api/rxlab-job/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-recommend/tsconfig.host.json" },
     { "path": "./packages/api/rxlab-usage/tsconfig.host.json" },
     { "path": "./packages/typert/loader" },
