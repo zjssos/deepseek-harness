@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/api/rxlab-usage/README.md
-README.md: 4c4664eaa844be62d3d7668a673105dd3f081a9a
-README.zh.md: 6f6f1e5ac8bb5e3fbd9af61683c8a0cc21871987
+README.md: f1484c1a85793e67ec6a7768afd0214defc5f53c
+README.zh.md: 1b1639812e3ee93eaade0e052b918555be925303

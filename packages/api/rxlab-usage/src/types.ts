@@ -8,6 +8,8 @@
  * @module @deepseek-ai/dsh-rxlab-usage/src/types
  */
 
+import type { Branded } from '@deepseek-ai/dsh-brand'
+
 /** Provider-reported token buckets summed per session. */
 export interface UsageTotals {
   readonly uncachedInputTokens: number
@@ -46,4 +48,44 @@ export interface SessionUsageRow {
 /** Result of a {@link SessionUsageRequest}; absent ids have no entry. */
 export interface SessionUsageValue {
   readonly sessions: Readonly<Record<string, SessionUsageRow>>
+}
+
+/**
+ * The six workbench stages, mirroring `@deepseek-ai/dsh-rxlab-job`'s StageId.
+ * Declared here rather than imported so this browser-safe module stays free of
+ * the work-order package's Host program; both are the same `Branded`/union
+ * vocabulary and values pass either way.
+ */
+export type StageId = 'exam' | 'frame' | 'lens' | 'fabrication' | 'pickup' | 'aftercare'
+
+/**
+ * Identifies one work order, mirroring `@deepseek-ai/dsh-rxlab-job`'s JobId.
+ * `Branded<'JobId'>` resolves to the same object type through the shared
+ * `@deepseek-ai/dsh-brand` symbol, so rxlabJob and rxlabUsage accept each
+ * other's ids.
+ */
+export type JobId = Branded<'JobId'>
+
+/** One stage's aggregated provider usage within a job. */
+export interface StageUsage {
+  readonly stage: StageId
+  readonly totals: UsageTotals
+  /** Exact cost under the configured route rates; absent when it cannot be proven. */
+  readonly cost?: number | undefined
+}
+
+/** Read the aggregated usage of one work order. */
+export interface JobUsageRequest {
+  readonly jobId: JobId
+}
+
+/** One work order's aggregated usage and exact route-priced cost. */
+export interface JobUsageValue {
+  readonly totals: UsageTotals
+  /** Exact total cost; present only when every attributed turn priced exactly. */
+  readonly cost?: number | undefined
+  /** The configured pricing currency; present exactly when `cost` is. */
+  readonly currency?: string | undefined
+  /** Stages that received usage, in first-appearance order. */
+  readonly stages: readonly StageUsage[]
 }

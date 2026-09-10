@@ -45,9 +45,11 @@ describe('addTotals / totalsEqual', () => {
 })
 
 describe('rxlabUsageDomainSpec', () => {
-  it('declares per-record sessions and modules tables', () => {
+  it('declares per-record session, module, job, and stageUsage tables at v2 compatible with v1', () => {
     expect(rxlabUsageDomainSpec.name).toBe('rxlab_usage')
+    expect(rxlabUsageDomainSpec.version).toBe(2)
+    expect(rxlabUsageDomainSpec.compatibleVersions).toEqual([1])
     expect(rxlabUsageDomainSpec.layout).toBe('per-record')
-    expect(Object.keys(rxlabUsageDomainSpec.tables).sort()).toEqual(['modules', 'sessions'])
+    expect(Object.keys(rxlabUsageDomainSpec.tables).sort()).toEqual(['jobs', 'modules', 'sessions', 'stage_usage'])
   })
 })
