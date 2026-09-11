@@ -332,7 +332,7 @@ function CatalogWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   const rows = list.state.items
 
   return (
-    <div className="flex h-[calc(100svh-10.5rem)] min-h-[34rem] flex-col overflow-hidden rounded-xl border shadow-sm">
+    <div className="flex h-(--workbench-full-height) min-h-[34rem] flex-col overflow-hidden rounded-xl border shadow-sm">
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-2.5">
         <div className="flex items-center gap-2 text-sm font-medium">
           <BookOpen className="size-4 text-muted-foreground" />

@@ -5,51 +5,41 @@
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CircleAlert, FolderOpen, Link2, Plus, Search, Trash2 } from 'lucide-react'
+import { CircleAlert, Link2, Plus, Search, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { PanelHeader } from '@/components/panel-header'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { JobId, JobStatus } from '@deepseek-ai/dsh-rxlab-job/types'
+import type { JobId } from '@deepseek-ai/dsh-rxlab-job/types'
 import type { ModulePanelProps } from '@/modules/types'
 import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
 import type { RxlabClientRuntime } from '@/rxlab/client'
+import { formatDateTime } from '@/lib/format'
+import { JOB_STATUS_LABELS } from '@/lib/job-labels'
 import { ConsumerDialog } from './ConsumerDialog'
 import { createJob, deleteJob, useJobList } from '@/modules/stages/use-job'
 import { formatMoney } from './consumer'
 
-const STATUS_LABELS: Record<JobStatus, string> = {
-  draft: '草稿',
-  'in-progress': '进行中',
-  complete: '已完成',
-  archived: '已归档',
-}
-
-function formatTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
-}
-
 function BootSkeleton() {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-start gap-4">
-        <Skeleton className="size-12 rounded-xl" />
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-4 w-72" />
+    <div className="flex flex-col gap-(--workbench-panel-gap)">
+      <div className="flex items-center gap-3">
+        <Skeleton className="size-9 rounded-md" />
+        <div className="flex flex-col gap-1.5">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-4 w-64" />
         </div>
       </div>
-      <Skeleton className="h-56 rounded-xl" />
+      <Skeleton className="h-56 rounded-lg" />
     </div>
   )
 }
 
-export default function JobsPanel(_props: ModulePanelProps) {
+export default function JobsPanel(props: ModulePanelProps) {
   const { phase, error, runtime } = useRxlabClient()
   if (phase === 'booting' || runtime === undefined) return <BootSkeleton />
   if (phase === 'failed') {
@@ -62,11 +52,17 @@ export default function JobsPanel(_props: ModulePanelProps) {
       </Card>
     )
   }
-  return <JobsWorkbench runtime={runtime} />
+  return <JobsWorkbench runtime={runtime} module={props.module} />
 }
 
 /** The connected work-order overview: search, create, and open. */
-function JobsWorkbench({ runtime }: { readonly runtime: RxlabClientRuntime }) {
+function JobsWorkbench({
+  runtime,
+  module,
+}: {
+  readonly runtime: RxlabClientRuntime
+  readonly module: ModulePanelProps['module']
+}) {
   const navigate = useNavigate()
   const connected = useConnected(runtime)
   const [query, setQuery] = useState('')
@@ -97,28 +93,33 @@ function JobsWorkbench({ runtime }: { readonly runtime: RxlabClientRuntime }) {
   const rows = list.state.items
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <FolderOpen className="size-4 text-muted-foreground" />
-          工单总览
-          <span className="text-xs font-normal text-muted-foreground">
-            {connected ? `${String(rows.length)} 条` : '连接中'}
-          </span>
-        </div>
-        <div className="relative min-w-44 flex-1">
-          <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input className="h-8 pl-8" placeholder="检索消费者姓名" value={query}
-            onChange={(event) => { setQuery(event.target.value) }} />
-        </div>
-        <Button size="sm" className="gap-1.5" onClick={() => { setCreateOpen(true) }}>
-          <Plus className="size-3.5" />
-          新建工单
-        </Button>
-      </div>
+    <div className="flex flex-col gap-(--workbench-panel-gap)">
+      <PanelHeader
+        icon={module.icon}
+        title={module.label}
+        description={module.tagline}
+        status={<Badge variant="outline">{connected ? `${String(rows.length)} 条` : '连接中'}</Badge>}
+        actions={
+          <>
+            <div className="relative">
+              <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+              <Input
+                className="h-8 w-56 pl-8"
+                placeholder="检索消费者姓名"
+                value={query}
+                onChange={(event) => { setQuery(event.target.value) }}
+              />
+            </div>
+            <Button size="sm" onClick={() => { setCreateOpen(true) }}>
+              <Plus className="size-3.5" />
+              新建工单
+            </Button>
+          </>
+        }
+      />
 
       {banner !== null ? (
-        <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="bg-destructive/10 text-destructive flex items-start gap-2 rounded-md px-3 py-2 text-xs">
           <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
           <span className="whitespace-pre-wrap">{banner}</span>
         </div>
@@ -153,14 +154,14 @@ function JobsWorkbench({ runtime }: { readonly runtime: RxlabClientRuntime }) {
                 <TableRow key={String(row.id)} className="cursor-pointer"
                   onClick={() => { void navigate(`/jobs/${String(row.id)}`) }}>
                   <TableCell className="font-medium">{row.name ?? '未命名消费者'}</TableCell>
-                  <TableCell><Badge variant="outline">{STATUS_LABELS[row.status]}</Badge></TableCell>
+                  <TableCell><Badge variant="outline">{JOB_STATUS_LABELS[row.status]}</Badge></TableCell>
                   <TableCell className="text-sm">{formatMoney(row.pricing) || '—'}</TableCell>
                   <TableCell>
                     {row.sessionId === undefined
-                      ? <span className="text-xs text-muted-foreground">未绑定</span>
+                      ? <span className="text-muted-foreground text-xs">未绑定</span>
                       : <Badge variant="secondary" className="gap-1"><Link2 className="size-3" />已绑定</Badge>}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatTime(row.updatedAt)}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{formatDateTime(row.updatedAt)}</TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"

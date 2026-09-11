@@ -5,7 +5,7 @@
  * owns, so edits apply without a restart for `applies: live` namespaces.
  */
 import { useMemo, useState } from 'react'
-import { CircleAlert, Loader2, Plus, RefreshCw, Settings, Trash2 } from 'lucide-react'
+import { CircleAlert, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PanelHeader } from '@/components/panel-header'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -507,7 +508,7 @@ function DeleteDialog({
   )
 }
 
-export default function SettingsPanel(_props: ModulePanelProps) {
+export default function SettingsPanel(props: ModulePanelProps) {
   const { runtime } = useRxlabClient()
   const connected = useConnected(runtime)
 
@@ -516,12 +517,13 @@ export default function SettingsPanel(_props: ModulePanelProps) {
   }
 
   return (
-    <ScrollArea className="h-[calc(100svh-10.5rem)]">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4">
-        <div className="flex items-center gap-2">
-          <Settings className="size-4 text-muted-foreground" />
-          <h2 className="text-sm font-medium">全局设置</h2>
-        </div>
+    <div className="flex flex-col gap-(--workbench-panel-gap)">
+      <PanelHeader
+        icon={props.module.icon}
+        title={props.module.label}
+        description={props.module.tagline}
+      />
+      <ScrollArea className="h-(--workbench-full-height)">
         <Tabs defaultValue="modules">
           <TabsList>
             <TabsTrigger value="modules">模块设置</TabsTrigger>
@@ -534,7 +536,7 @@ export default function SettingsPanel(_props: ModulePanelProps) {
             <PresetTab runtime={runtime} connected={connected} />
           </TabsContent>
         </Tabs>
-      </div>
-    </ScrollArea>
+      </ScrollArea>
+    </div>
   )
 }

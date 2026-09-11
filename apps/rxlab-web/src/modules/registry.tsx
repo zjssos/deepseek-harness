@@ -13,7 +13,7 @@ import {
   Wrench,
 } from 'lucide-react'
 
-import type { ModuleDefinition, ModuleGroup } from './types'
+import type { ModuleDefinition } from './types'
 
 const jobsPanel = lazy(() => import('./jobs/Panel'))
 export const jobDetailPanel = lazy(() => import('./jobs/JobDetail'))
@@ -29,26 +29,27 @@ const agentPanel = lazy(() => import('./agent/Panel'))
 const settingsPanel = lazy(() => import('./settings/Panel'))
 
 /**
- * Workbench module manifest. The primary rail is the work-order overview plus
- * the six-stage workflow; the secondary rail carries content/collect/agent/
- * settings tools. Copy is zh until the app gains a locale dictionary.
+ * Workbench module manifest. `core` is the work-order surface the app is built
+ * around; the six `stage` modules are views inside its workbench, not routes of
+ * their own; `tool` modules are reached from the top bar's 更多 menu. Copy is zh
+ * until the app gains a locale dictionary.
  */
 export const MODULES: readonly ModuleDefinition[] = [
   {
     id: 'jobs',
     label: '工单总览',
-    tagline: '消费者画像、阶段进度、配镜指南与用量',
+    tagline: '消费者画像、阶段工作台、配镜指南与用量',
     description:
-      '工单总览：以工单为单位的配镜编排域（rxlab_job）。创建工单录入消费者画像，逐阶段写入确定性与人工产出，最终组装结构化配镜指南并可导出 HTML。',
+      '工单：以工单为单位的配镜编排域（rxlab_job）。创建工单录入消费者画像，在工单工作台内逐阶段写入确定性与人工产出，最终组装结构化配镜指南并可导出 HTML。',
     scope: [
       '工单列表、创建、编辑消费画像与对客价格',
-      '六阶段进度总览与阶段面板跳转',
+      '工单工作台：六阶段切换、阶段产出与校验',
       '生成并渲染配镜指南、导出 HTML',
       '绑定工单会话、查看 token 与成本用量',
     ],
     icon: ClipboardList,
     status: 'active',
-    group: 'stage',
+    group: 'core',
     panel: jobsPanel,
   },
   {
@@ -188,17 +189,22 @@ export const MODULES: readonly ModuleDefinition[] = [
   },
 ]
 
-/** Stable lookup by rail key; the workspace route uses it to render panels. */
+/** Stable lookup by module id; the workspace route uses it to render panels. */
 export function moduleById(id: string): ModuleDefinition | undefined {
   return MODULES.find(module => module.id === id)
 }
 
-/** Modules of one rail group, in manifest order. */
-export function modulesByGroup(group: ModuleGroup): readonly ModuleDefinition[] {
-  return MODULES.filter(module => module.group === group)
+/** The six stage modules in manifest order; they render inside the work-order workbench. */
+export function stageModules(): readonly ModuleDefinition[] {
+  return MODULES.filter(module => module.stage !== undefined)
 }
 
-/** The rail's first entry; used as the index redirect target. */
+/** The tool modules reached from the top bar's 更多 menu, `settings` included. */
+export function toolModules(): readonly ModuleDefinition[] {
+  return MODULES.filter(module => module.group === 'tool')
+}
+
+/** The workbench's landing route: the work-order overview. */
 export function defaultModuleId(): string {
-  return MODULES[0]?.id ?? 'jobs'
+  return 'jobs'
 }

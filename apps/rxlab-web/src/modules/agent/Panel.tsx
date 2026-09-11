@@ -113,7 +113,7 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   }
 
   return (
-    <div className="flex h-[calc(100svh-10.5rem)] min-h-[34rem] overflow-hidden rounded-xl border shadow-sm">
+    <div className="flex h-(--workbench-full-height) min-h-[34rem] overflow-hidden rounded-xl border shadow-sm">
       <SessionSidebar
         list={list}
         archivedIds={archived.ids}

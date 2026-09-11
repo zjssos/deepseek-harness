@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { PanelHeader } from '@/components/panel-header'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -56,7 +57,16 @@ export default function ContentPanel(props: ModulePanelProps) {
       </Card>
     )
   }
-  return <ContentWorkbench runtime={runtime} module={props.module} />
+  return (
+    <div className="flex flex-col gap-(--workbench-panel-gap)">
+      <PanelHeader
+        icon={props.module.icon}
+        title={props.module.label}
+        description={props.module.tagline}
+      />
+      <ContentWorkbench runtime={runtime} module={props.module} />
+    </div>
+  )
 }
 
 /** Tabs shell: 参照库 + 知识 + 话术. */
