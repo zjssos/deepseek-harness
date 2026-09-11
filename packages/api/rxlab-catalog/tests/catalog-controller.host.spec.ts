@@ -30,8 +30,6 @@ function frameImport(overrides: Partial<CatalogImportRequest> = {}): CatalogImpo
       linkId: 'link-1',
       shopName: 'BOLON暴龙京东自营旗舰店',
       sku: '100132809415',
-      captureId: 'capture-1',
-      capturedAt: '2026-09-08T13:15:18.828Z',
     },
     listing: {
       title: 'BOLON暴龙近视眼镜钛框男复古休闲镜框可配度数BA7009 B15',
@@ -58,9 +56,8 @@ describe('importCollected', () => {
     expect(item.color).toBe('哑黑银')
     expect(item.origin).toBe('collected')
     expect(item.source?.linkId).toBe('link-1')
-    expect(item.priceHistory).toEqual([
-      { value: 899, capturedAt: '2026-09-08T13:15:18.828Z', source: 'collected', captureId: 'capture-1', note: '¥899' },
-    ])
+    expect(item.priceHistory).toHaveLength(1)
+    expect(item.priceHistory?.[0]).toMatchObject({ value: 899, source: 'collected', note: '¥899' })
   })
 
   it('merges a repeat import of the same link instead of minting a duplicate', async () => {
@@ -84,11 +81,11 @@ describe('importCollected', () => {
     const { controller } = await boot()
     const first = await controller.importCollected(frameImport())
     const second = await controller.importCollected(frameImport({
-      source: { ...frameImport().source, captureId: 'capture-2', capturedAt: '2026-09-09T00:00:00.000Z' },
+      listing: { title: 'BOLON暴龙近视眼镜钛框 BA7009', price: 899 },
     }))
     expect(second.item.id).toBe(first.item.id)
     expect(second.item.priceHistory?.length).toBe(1)
-    expect(second.item.priceHistory?.[0]?.capturedAt).toBe('2026-09-09T00:00:00.000Z')
+    expect(second.item.priceHistory?.[0]?.value).toBe(899)
   })
 
   it('classifies a lens-only listing into a lens record', async () => {

@@ -1,11 +1,11 @@
 /**
- * Pure parsing and normalization helpers shared by the JD collector and the
- * CSV import path. No network, no browser — kept free of side effects so the
- * package unit tests can cover rejection paths offline.
- * @module @deepseek-ai/dsh-rxlab-collect/src/executor/parse
+ * Pure parsing and normalization helpers shared by the hand-entry forms and
+ * the CSV import path. No network, no browser — kept free of side effects so
+ * the package unit tests can cover rejection paths offline.
+ * @module @deepseek-ai/dsh-rxlab-collect/src/parse
  */
 
-import type { CollectPlatform } from '../types.ts'
+import type { CollectPlatform } from './types.ts'
 
 /** Best-effort platform guess from a product URL host. */
 export function platformFromUrl(url: string): CollectPlatform | undefined {
@@ -19,11 +19,6 @@ export function platformFromUrl(url: string): CollectPlatform | undefined {
 export function jdSkuFromUrl(url: string): string | null {
   const match = url.match(/item(?:\.m)?\.jd\.com\/(?:product\/)?(\d+)/)
   return match?.[1] ?? null
-}
-
-/** The canonical JD mobile product URL for one sku. */
-export function jdMobileUrl(sku: string): string {
-  return `https://item.m.jd.com/product/${sku}.html`
 }
 
 /** The canonical JD desktop product URL for one sku. */
@@ -40,25 +35,6 @@ export function taobaoIdFromUrl(url: string): string | null {
 /** The canonical Taobao desktop product URL for one item id. */
 export function taobaoItemUrl(id: string): string {
   return `https://item.taobao.com/item.htm?id=${id}`
-}
-
-/** Remove Taobao's document-title decoration from a captured listing title. */
-export function cleanTaobaoTitle(title: string): string {
-  return title
-    .replace(/-淘宝网$/, '')
-    .replace(/-淘你喜欢/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/** Remove JD's document-title decoration from a captured listing title. */
-export function cleanJdTitle(title: string): string {
-  return title
-    .replace(/【行情[^]*?-京东/, '')
-    .replace(/【图片 价格 品牌 评论】-京东/, '')
-    .replace(/-京东$/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 /**
@@ -85,7 +61,7 @@ export function splitCsvLines(text: string): { rows: string[][]; errors: { row: 
     current = []
   }
   for (const line of physical) {
-    const chars = [...line]
+    const chars = Array.from(line)
     for (let i = 0; i < chars.length; i++) {
       const ch = chars[i]
       if (ch === undefined) continue
@@ -132,29 +108,24 @@ const HEADER_ALIASES: Readonly<Record<string, string>> = {
   平台: 'platform',
   url: 'url',
   链接: 'url',
-  shopid: 'shopId',
-  店铺id: 'shopId',
-  shopname: 'shopName',
-  店铺: 'shopName',
   sku: 'sku',
-  title: 'titleAtAdd',
-  标题: 'titleAtAdd',
+  title: 'title',
+  标题: 'title',
 }
 
 /** One parsed CSV row keyed by canonical field name. */
 export interface CsvRecord {
   readonly platform: string
   readonly url: string
-  readonly shopId?: string
-  readonly shopName?: string
   readonly sku?: string
-  readonly titleAtAdd?: string
+  readonly title?: string
 }
 
 /**
  * Parse CSV text with a header row into keyed records. The header must carry
- * `platform` and `url` columns; a row is rejected when its url is blank (a
- * blank platform is allowed and inferred from the url host by the caller).
+ * `url`; a row is rejected when its url is blank, and a blank platform is
+ * allowed because the caller infers it from the url host. The owning shop
+ * never comes from the file: the import request names it.
  */
 export function csvToRecords(text: string): { records: CsvRecord[]; errors: { row: number; reason: string }[] } {
   const { rows, errors } = splitCsvLines(text)
@@ -185,17 +156,13 @@ export function csvToRecords(text: string): { records: CsvRecord[]; errors: { ro
       const value = idx >= 0 ? cells[idx]?.trim() ?? '' : ''
       return value === '' ? undefined : value
     }
-    const shopId = pick('shopId')
-    const shopName = pick('shopName')
     const sku = pick('sku')
-    const titleAtAdd = pick('titleAtAdd')
+    const title = pick('title')
     records.push({
       platform,
       url,
-      ...(shopId === undefined ? {} : { shopId }),
-      ...(shopName === undefined ? {} : { shopName }),
       ...(sku === undefined ? {} : { sku }),
-      ...(titleAtAdd === undefined ? {} : { titleAtAdd }),
+      ...(title === undefined ? {} : { title }),
     })
   })
   return { records, errors }

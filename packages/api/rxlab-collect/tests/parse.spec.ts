@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  cleanJdTitle,
-  cleanTaobaoTitle,
   csvToRecords,
   jdDesktopUrl,
-  jdMobileUrl,
   jdSkuFromUrl,
   platformFromUrl,
   splitCsvLines,
   taobaoIdFromUrl,
   taobaoItemUrl,
-} from '../src/executor/parse.ts'
+} from '../src/parse.ts'
 
 describe('platformFromUrl', () => {
   it('guesses jd from desktop and mobile item urls', () => {
@@ -35,17 +32,8 @@ describe('jd url helpers', () => {
     expect(jdSkuFromUrl('https://mall.jd.com/index-57589.html')).toBeNull()
   })
 
-  it('builds canonical mobile and desktop urls', () => {
-    expect(jdMobileUrl('123')).toBe('https://item.m.jd.com/product/123.html')
+  it('builds the canonical desktop url', () => {
     expect(jdDesktopUrl('123')).toBe('https://item.jd.com/123.html')
-  })
-
-  it('cleans JD document-title decoration', () => {
-    expect(cleanJdTitle('BOLON 太阳镜 BX8005 奶茶色【图片 价格 品牌 评论】-京东'))
-      .toBe('BOLON 太阳镜 BX8005 奶茶色')
-    expect(cleanJdTitle('BOLON 太阳镜 BX8005【行情 报价 价格 评测】-京东'))
-      .toBe('BOLON 太阳镜 BX8005')
-    expect(cleanJdTitle('普通标题')).toBe('普通标题')
   })
 })
 
@@ -57,10 +45,8 @@ describe('taobao url helpers', () => {
     expect(taobaoIdFromUrl('https://item.taobao.com/item.htm')).toBeNull()
   })
 
-  it('builds the canonical item url and cleans document-title decoration', () => {
+  it('builds the canonical item url', () => {
     expect(taobaoItemUrl('123')).toBe('https://item.taobao.com/item.htm?id=123')
-    expect(cleanTaobaoTitle('夏日冰丝防晒袖套男-淘宝网')).toBe('夏日冰丝防晒袖套男')
-    expect(cleanTaobaoTitle('普通标题')).toBe('普通标题')
   })
 })
 
@@ -91,18 +77,22 @@ describe('splitCsvLines', () => {
 describe('csvToRecords', () => {
   it('maps the header columns to canonical keys', () => {
     const { records, errors } = csvToRecords(
-      'platform,url,shopName,title\njd,https://item.jd.com/1.html,BOLON官方旗舰店,太阳镜\n,https://item.m.jd.com/product/2.html,,',
+      'platform,url,title\njd,https://item.jd.com/1.html,太阳镜\n,https://item.m.jd.com/product/2.html,',
     )
     expect(errors).toEqual([])
     expect(records).toEqual([
       {
         platform: 'jd',
         url: 'https://item.jd.com/1.html',
-        shopName: 'BOLON官方旗舰店',
-        titleAtAdd: '太阳镜',
+        title: '太阳镜',
       },
       { platform: '', url: 'https://item.m.jd.com/product/2.html' },
     ])
+  })
+
+  it('accepts the zh header aliases', () => {
+    const { records } = csvToRecords('平台,链接,标题\njd,https://item.jd.com/1.html,太阳镜\n')
+    expect(records).toEqual([{ platform: 'jd', url: 'https://item.jd.com/1.html', title: '太阳镜' }])
   })
 
   it('rejects rows without a url', () => {

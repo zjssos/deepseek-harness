@@ -1,79 +1,104 @@
 import { describe, expect, it } from 'vitest'
-import { formatLinkList, formatSubmitValue } from '../src/tools.ts'
-import { formatSnapshot, type PageSnapshot } from '../src/browse/snapshot.ts'
+import {
+  describeDraftPayload,
+  formatDraftSubmit,
+  formatLinkList,
+  formatShopList,
+  parsePriceText,
+} from '../src/tools.ts'
 
-const SNAPSHOT: PageSnapshot = {
-  url: 'https://search.jd.com/Search?keyword=眼镜',
-  title: '眼镜 - 商品搜索',
-  text: '搜索结果第一页\n共 60 件商品',
-  elements: [
-    { ref: 1, tag: 'input', label: '搜索' },
-    { ref: 2, tag: 'a', label: '某眼镜旗舰店' },
-    { ref: 3, tag: 'a', label: '钛合金光学镜架 商品详情' },
-  ],
-  textTruncated: false,
-  elementsTruncated: false,
-}
-
-describe('formatSnapshot', () => {
-  it('renders url, title, body text, and ref lines in order', () => {
-    expect(formatSnapshot(SNAPSHOT)).toBe([
-      'URL: https://search.jd.com/Search?keyword=眼镜',
-      '标题: 眼镜 - 商品搜索',
-      '',
-      '页面文本:',
-      '搜索结果第一页',
-      '共 60 件商品',
-      '',
-      '可交互元素(3 个，用 ref 引用):',
-      '[1] <input> 搜索',
-      '[2] <a> 某眼镜旗舰店',
-      '[3] <a> 钛合金光学镜架 商品详情',
-    ].join('\n'))
+describe('parsePriceText', () => {
+  it('reads a numeric value out of a displayed price text', () => {
+    expect(parsePriceText('¥899')).toBe(899)
+    expect(parsePriceText('1,280.00 元')).toBe(1280)
+    expect(parsePriceText('1280 起')).toBe(1280)
   })
 
-  it('appends a truncation note per truncated dimension', () => {
-    const truncated: PageSnapshot = {
-      ...SNAPSHOT,
-      textTruncated: true,
-      elementsTruncated: true,
-    }
-    const text = formatSnapshot(truncated)
-    expect(text).toContain('(页面文本被截断，可用 browser_scroll 或翻页查看更多)')
-    expect(text).toContain('(可交互元素超过上限，仅列出前面的部分)')
+  it('returns null when the text holds no usable number', () => {
+    expect(parsePriceText('暂无报价')).toBeNull()
+    expect(parsePriceText('¥')).toBeNull()
+    expect(parsePriceText('.')).toBeNull()
   })
 })
 
-describe('formatSubmitValue', () => {
-  it('summarizes created, merged, and rejected entries', () => {
-    expect(formatSubmitValue({
-      created: [{ id: 'a', platform: 'jd', url: 'https://item.jd.com/1.html', updatedAt: '', status: 'idle' }],
-      merged: [],
-      rejected: [{ link: { url: 'https://example.com/x' }, reason: '无法推断平台: https://example.com/x' }],
+describe('describeDraftPayload', () => {
+  it('names the shop a shop draft would register', () => {
+    expect(describeDraftPayload({
+      target: 'shop',
+      platform: 'jd',
+      name: 'BOLON官方旗舰店',
+    })).toBe('店铺 jd BOLON官方旗舰店')
+  })
+
+  it('names the product and its price text when the draft carries one', () => {
+    expect(describeDraftPayload({
+      target: 'product',
+      platform: 'jd',
+      url: 'https://item.jd.com/1.html',
+      title: '暴龙 BA7009',
+      price: { value: 899, raw: '¥899' },
+    })).toBe('商品 jd 暴龙 BA7009 ¥899')
+  })
+
+  it('falls back to the url when the product draft has no title', () => {
+    expect(describeDraftPayload({
+      target: 'product',
+      platform: 'taobao',
+      url: 'https://item.taobao.com/item.htm?id=1',
+    })).toBe('商品 taobao https://item.taobao.com/item.htm?id=1')
+  })
+})
+
+describe('formatDraftSubmit', () => {
+  it('reports the counts, each draft, and the review requirement', () => {
+    expect(formatDraftSubmit({
+      created: [{
+        id: 'draft-1',
+        target: 'shop',
+        status: 'pending',
+        summary: '店铺 jd BOLON官方旗舰店',
+        createdAt: '2026-09-11T00:00:00.000Z',
+      }],
+      rejected: [{ target: 'product', reason: 'a product entry needs a url' }],
     })).toBe([
-      '入库完成：新增 1，合并 0，拒绝 1。',
-      '- jd https://item.jd.com/1.html',
-      '- 拒绝 https://example.com/x: 无法推断平台: https://example.com/x',
+      '已提交待确认草稿 1 条，拒绝 1 条。',
+      '- 店铺 jd BOLON官方旗舰店（草稿 draft-1，待人工确认）',
+      '- 拒绝 product: a product entry needs a url',
+      '这些草稿不会自动入库：需要用户在采集模块逐条确认后才写入。请勿重复提交同一批信息。',
     ].join('\n'))
   })
 
-  it('appends the shop name when the link carries one', () => {
-    expect(formatSubmitValue({
-      created: [{ id: 'a', platform: 'jd', url: 'https://item.jd.com/2.html', updatedAt: '', status: 'idle', shopName: '某旗舰店' }],
-      merged: [],
-      rejected: [],
-    })).toContain('- jd https://item.jd.com/2.html （某旗舰店）')
+  it('omits the review reminder when nothing was created', () => {
+    expect(formatDraftSubmit({
+      created: [],
+      rejected: [{ target: 'shop', reason: 'a shop entry needs a name' }],
+    })).toBe([
+      '已提交待确认草稿 0 条，拒绝 1 条。',
+      '- 拒绝 shop: a shop entry needs a name',
+    ].join('\n'))
+  })
+})
+
+describe('formatShopList', () => {
+  it('renders the empty case', () => {
+    expect(formatShopList([])).toBe('当前没有已登记的店铺。')
+  })
+
+  it('renders the platform, name, id, and home url', () => {
+    expect(formatShopList([
+      { id: 's1', platform: 'jd', name: 'BOLON官方旗舰店', updatedAt: '', homeUrl: 'https://mall.jd.com/1.html' },
+    ])).toBe('共 1 个已登记店铺：\n- jd BOLON官方旗舰店（id=s1 https://mall.jd.com/1.html）')
   })
 })
 
 describe('formatLinkList', () => {
   it('renders the empty case', () => {
-    expect(formatLinkList([])).toBe('当前没有匹配的链接资产。')
+    expect(formatLinkList([])).toBe('当前没有已登记的商品条目。')
   })
 
-  it('renders status, shop, and sku columns', () => {
+  it('renders the platform, url, title, and owning shop', () => {
     expect(formatLinkList([
-      { id: 'a', platform: 'jd', url: 'https://item.jd.com/3.html', updatedAt: '', status: 'ok', shopName: '某旗舰店', sku: '123' },
-    ])).toBe('共 1 条链接资产：\n- jd https://item.jd.com/3.html [ok] 某旗舰店 sku=123')
+      { id: 'l1', platform: 'jd', url: 'https://item.jd.com/3.html', updatedAt: '', title: '暴龙 BA7009', shopRef: 's1' },
+    ])).toBe('共 1 条已登记商品条目：\n- jd https://item.jd.com/3.html 暴龙 BA7009（店铺 s1）')
   })
 })

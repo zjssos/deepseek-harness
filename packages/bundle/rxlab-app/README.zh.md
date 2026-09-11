@@ -31,7 +31,6 @@ kind: "package-bundle"
 | `--host` | `127.0.0.1` | 工作台 server 的绑定 host(拒绝 `0.0.0.0`) |
 | `--port` | `3081` | 绑定端口;刻意与 web profile 的 3080 并存 |
 | `--no-open` | 关 | 不在浏览器中打开 canonical URL |
-| `--cdp` | 关 | 采集 agent 的浏览会话经 Chrome DevTools Protocol 接管真实浏览器,而非自有的持久 profile |
 
 SPA 经 `/api` Remote 通道与 host 通信;rxlab 数据落在 `$DSH_HOME/storages-rxlab`、会话在 `sessions-rxlab`、设置在 `settings-rxlab.yaml`,因此本 profile 可与 web profile 在同一 home 下并存而不共享业务数据。凭据保持共享,模型继续可用。
 
@@ -45,7 +44,7 @@ SPA 经 `/api` Remote 通道与 host 通信;rxlab 数据落在 `$DSH_HOME/storag
 
 ### 对 base 的 patch 面
 
-patch 按 id 整行替换 base 行(每个 patch 行重述它拥有的全部键)并插入 rxlab 行:`rxlab-startup`(flags 的 commander 解析,提供 `rxlabStartup`)、`webserver` 与 `connection`(绑定值与 `/api` 信任围栏,由 `rxlabStartup`/`rxlabRuntime` 供给)、`rxlab-runtime`(本 bundle 的 glue:解析构建好的前端 dist、mount frontend-static fallback 席位、注册 rxlab 界面提示分区、打印 URL 行、开浏览器、bind 后提供 `rxlabRuntime`)、会话 Remote 界面行、rxlab 业务行 `rxlab-catalog` 与 `rxlab-collect`、`rxlab-collect-browser` host 行,以及 `agent-presets` 名单。数据隔离经由 `settings`、`session-persistence-jsonl`、`storage-json` 三行的逐行覆盖。
+patch 按 id 整行替换 base 行(每个 patch 行重述它拥有的全部键)并插入 rxlab 行:`rxlab-startup`(flags 的 commander 解析,提供 `rxlabStartup`)、`webserver` 与 `connection`(绑定值与 `/api` 信任围栏,由 `rxlabStartup`/`rxlabRuntime` 供给)、`rxlab-runtime`(本 bundle 的 glue:解析构建好的前端 dist、mount frontend-static fallback 席位、注册 rxlab 界面提示分区、打印 URL 行、开浏览器、bind 后提供 `rxlabRuntime`)、会话 Remote 界面行、rxlab 业务行 `rxlab-catalog` 与 `rxlab-collect`,以及 `agent-presets` 名单。数据隔离经由 `settings`、`session-persistence-jsonl`、`storage-json` 三行的逐行覆盖。
 
 ### 源码地图
 
@@ -83,7 +82,6 @@ persona 文本进入每个 rxlab 会话的系统提示;collect-preset 的增量�
 
 - **前端 dist 是装配事实** —— profile 伺服构建好的 `@deepseek-ai/dsh-rxlab-web-frontend/dist`;dist 不入库,源码 checkout 必须先构建前端,`dsh rxlab` 才有页面可伺服。
 - **共享浏览器认证文案** —— 无 token 请求得到共享的 dsh browser-authentication 页,其文案仍写 "dsh web";rxlab 专属渲染是润色项。
-- **一机一份登录 profile** —— 采集 agent 的持久浏览器 profile 由本机所有会话共享;`--cdp` 接管另行启动的真实浏览器(默认 `http://127.0.0.1:9222`),不可达时快速失败并给出指引。
 - **业务模块覆盖** —— 验光配镜/推荐校验/效果图模块是 planned 面板;persona 声明它们未接入,而不是虚构工具。
 
 <a id="dev-note"></a>

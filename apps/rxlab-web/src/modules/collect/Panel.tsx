@@ -1,32 +1,35 @@
 /**
- * 商品采集 workbench: manage platform/shop/product-link assets (manual entry
- * and CSV import), trigger serial run batches over selected links, and review
- * capture history — all over the embedded client runtime's
- * `remote.rxlabCollect` namespace. Deterministic L1 collectors run host-side,
- * so this module works without a model key. zh copy until the app gains a
- * locale dictionary (wiki/agent precedent).
+ * 商品采集 workbench: a hand-entry ledger over the embedded client runtime's
+ * `remote.rxlabCollect` namespace — 平台 → 店铺 → 商品, typed in by a person
+ * and optionally filled in from drafts the collect agent proposed. Nothing is
+ * captured here: every field comes from a person, or from a draft that a
+ * person confirmed. zh copy until the app gains a locale dictionary
+ * (wiki/agent precedent).
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BookOpen,
-  History,
-  Link2,
+  Check,
+  FolderPlus,
   Loader2,
-  Play,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
+  Store,
   Trash2,
+  X,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PanelHeader } from '@/components/panel-header'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -35,12 +38,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import type { ModulePanelProps } from '@/modules/types'
 import type {
-  CollectBatch,
-  CollectBatchId,
+  CollectDraft,
+  CollectDraftPayload,
   CollectLink,
-  CollectLinkId,
-  CollectLinkStatus,
+  CollectParam,
   CollectPlatform,
+  CollectShop,
+  CollectShopId,
 } from '@deepseek-ai/dsh-rxlab-collect/types'
 import type { CatalogImportRequest } from '@deepseek-ai/dsh-rxlab-catalog/types'
 import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
@@ -50,19 +54,22 @@ import { moduleById } from '@/modules/registry'
 import { ModuleAgentSurface } from '@/rxlab/module-agent/ModuleAgentSurface'
 import { catalogImportCollected } from '@/modules/content/use-catalog'
 import {
-  createBatch,
+  draftCommit,
+  draftReject,
   importLinks,
   linkRemove,
   linkUpsert,
-  useBatchDetail,
-  useBatchList,
-  useLinkCaptures,
+  shopRemove,
+  shopUpsert,
+  useDraftList,
   useLinkList,
+  useShopList,
   type LinkListFilters,
+  type ListController,
+  type ShopListFilters,
 } from './use-collect'
 
 const PLATFORMS: readonly CollectPlatform[] = ['jd', 'taobao', '1688', 'manual']
-const STATUSES: readonly CollectLinkStatus[] = ['idle', 'running', 'ok', 'error']
 
 const PLATFORM_LABELS: Record<CollectPlatform, string> = {
   jd: '京东',
@@ -71,12 +78,10 @@ const PLATFORM_LABELS: Record<CollectPlatform, string> = {
   manual: '手工',
 }
 
-const STATUS_LABELS: Record<CollectLinkStatus, string> = {
-  idle: '待采',
-  running: '采集中',
-  ok: '成功',
-  error: '失败',
-}
+/** 未归类商品在选择区里的哨兵值;店铺 id 都是 uuid,不会与之相撞。 */
+const UNFILED = 'unfiled'
+
+type LedgerSelection = typeof UNFILED | CollectShopId
 
 function formatTime(value: string | undefined): string {
   if (value === undefined) return ''
@@ -85,26 +90,62 @@ function formatTime(value: string | undefined): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function formatPrice(price: number | undefined): string {
-  return price === undefined ? '' : `¥${price}`
+/** 条目标题:人工录入的 title 优先,兼容域 v1/v2 记录的 titleAtAdd。 */
+function displayTitle(link: CollectLink): string {
+  return link.title ?? link.titleAtAdd ?? link.url
+}
+
+/** 把人工输入的价格文本解析为数值;解析不出时返回 null,由调用方决定是否写入。 */
+function parsePrice(raw: string): number | null {
+  const cleaned = raw.replace(/[^\d.]/g, '')
+  if (cleaned === '' || cleaned === '.') return null
+  const value = Number(cleaned)
+  return Number.isFinite(value) ? value : null
+}
+
+/** 参数输入:每行一条“名称:值”。无法解析的行被忽略。 */
+function parseParams(text: string): { name: string; value: string }[] {
+  const entries: { name: string; value: string }[] = []
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.length === 0) continue
+    const stops = [trimmed.indexOf(':'), trimmed.indexOf('：')].filter(index => index > 0)
+    if (stops.length === 0) continue
+    const at = Math.min(...stops)
+    const name = trimmed.slice(0, at).trim()
+    const value = trimmed.slice(at + 1).trim()
+    if (name.length > 0 && value.length > 0) entries.push({ name, value })
+  }
+  return entries
+}
+
+/** 参数回填成表单文本。 */
+function paramsText(params: readonly CollectParam[] | undefined): string {
+  return params === undefined ? '' : params.map(param => `${param.name}:${param.value}`).join('\n')
+}
+
+/** 草稿一行的摘要文案。 */
+function draftSummary(payload: CollectDraftPayload): string {
+  if (payload.target === 'shop') return `${PLATFORM_LABELS[payload.platform]} · ${payload.name}`
+  return `${PLATFORM_LABELS[payload.platform]} · ${payload.title ?? payload.url}`
 }
 
 function BootSkeleton() {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-start gap-4">
-        <Skeleton className="size-12 rounded-xl" />
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="h-4 w-72" />
+    <div className="flex flex-col gap-(--workbench-panel-gap)">
+      <div className="flex items-center gap-3">
+        <Skeleton className="size-9 rounded-md" />
+        <div className="flex flex-col gap-1.5">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-4 w-64" />
         </div>
       </div>
-      <Skeleton className="h-56 rounded-xl" />
+      <Skeleton className="h-56 rounded-lg" />
     </div>
   )
 }
 
-export default function CollectPanel(_props: ModulePanelProps) {
+export default function CollectPanel(props: ModulePanelProps) {
   const { phase, error, runtime } = useRxlabClient()
   if (phase === 'booting' || runtime === undefined) return <BootSkeleton />
   if (phase === 'failed') {
@@ -117,33 +158,39 @@ export default function CollectPanel(_props: ModulePanelProps) {
       </Card>
     )
   }
-  return <CollectWorkbench runtime={runtime} />
+  return <CollectWorkbench runtime={runtime} module={props.module} />
 }
 
-function CollectWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
+interface TabProps {
+  readonly runtime: RxlabClientRuntime
+  readonly connected: boolean
+  readonly notify: (message: string) => void
+}
+
+function CollectWorkbench({
+  runtime,
+  module,
+}: {
+  readonly runtime: RxlabClientRuntime
+  readonly module: ModulePanelProps['module']
+}) {
   const connected = useConnected(runtime)
   const moduleAgents = useModuleAgents(runtime, connected)
   const [banner, setBanner] = useState<string | null>(null)
-  const [tab, setTab] = useState<'links' | 'batches' | 'agent'>('links')
-  const [focusBatch, setFocusBatch] = useState<CollectBatchId | undefined>(undefined)
+  const [tab, setTab] = useState<'shops' | 'drafts' | 'agent'>('shops')
 
   const notify = useCallback((message: string) => { setBanner(message) }, [])
   const clearBanner = useCallback(() => { setBanner(null) }, [])
-  const goToBatch = useCallback((batchId: CollectBatchId) => {
-    setFocusBatch(batchId)
-    setTab('batches')
-  }, [])
+  const pendingDrafts = useDraftList(runtime, connected, { status: 'pending' })
+  const pending = pendingDrafts.state.items.length
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold">商品采集</h2>
-          <p className="text-sm text-muted-foreground">
-            平台 → 店铺 → 商品链接资产管理;选中链接成批次,由确定性采集器逐条抓取并落盘。
-          </p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-(--workbench-panel-gap)">
+      <PanelHeader
+        icon={module.icon}
+        title={module.label}
+        description={module.tagline}
+      />
       {banner !== null && (
         <Card>
           <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
@@ -152,17 +199,24 @@ function CollectWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
           </CardContent>
         </Card>
       )}
-      <Tabs value={tab} onValueChange={(value) => { setTab(value as 'links' | 'batches' | 'agent') }}>
+      <Tabs value={tab} onValueChange={(value) => { setTab(value as 'shops' | 'drafts' | 'agent') }}>
         <TabsList>
-          <TabsTrigger value="links">商品链接</TabsTrigger>
-          <TabsTrigger value="batches">采集批次</TabsTrigger>
+          <TabsTrigger value="shops">店铺台账</TabsTrigger>
+          <TabsTrigger value="drafts">
+            待确认草稿{pending > 0 && <Badge variant="secondary" className="ml-1">{pending}</Badge>}
+          </TabsTrigger>
           <TabsTrigger value="agent">采集助手</TabsTrigger>
         </TabsList>
-        {tab === 'links' && (
-          <LinksTab runtime={runtime} connected={connected} notify={notify} onBatchCreated={goToBatch} />
+        {tab === 'shops' && (
+          <ShopLedgerTab runtime={runtime} connected={connected} notify={notify} />
         )}
-        {tab === 'batches' && (
-          <BatchesTab runtime={runtime} connected={connected} focusBatchId={focusBatch} />
+        {tab === 'drafts' && (
+          <DraftReviewTab
+            runtime={runtime}
+            connected={connected}
+            notify={notify}
+            drafts={pendingDrafts}
+          />
         )}
         {tab === 'agent' && (
           <ModuleAgentSurface
@@ -176,209 +230,361 @@ function CollectWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
   )
 }
 
-interface TabProps {
-  readonly runtime: RxlabClientRuntime
-  readonly connected: boolean
-  readonly notify: (message: string) => void
-}
-
-/** 商品链接:资产管理、筛选、选中成批次、单条采集/详情/删除。 */
-function LinksTab({ runtime, connected, notify, onBatchCreated }: TabProps & { readonly onBatchCreated: (id: CollectBatchId) => void }) {
+/** 店铺台账:左栏按平台列店铺,右栏是该店铺的档案与商品条目。 */
+function ShopLedgerTab({ runtime, connected, notify }: TabProps) {
+  const [shopQuery, setShopQuery] = useState('')
+  const [shopDebounced, setShopDebounced] = useState('')
   const [platform, setPlatform] = useState<'all' | CollectPlatform>('all')
-  const [status, setStatus] = useState<'all' | CollectLinkStatus>('all')
-  const [query, setQuery] = useState('')
-  const [debounced, setDebounced] = useState('')
-  const [selected, setSelected] = useState<ReadonlySet<CollectLinkId>>(new Set())
-  const [running, setRunning] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
+  const [selection, setSelection] = useState<LedgerSelection | undefined>(undefined)
+  const [linkQuery, setLinkQuery] = useState('')
+  const [linkDebounced, setLinkDebounced] = useState('')
+  const [shopDialog, setShopDialog] = useState<{ open: boolean; shop?: CollectShop }>({ open: false })
+  const [productDialog, setProductDialog] = useState<{ open: boolean; link?: CollectLink }>({ open: false })
   const [csvOpen, setCsvOpen] = useState(false)
-  const [detailLink, setDetailLink] = useState<CollectLink | undefined>(undefined)
-  const [removeTarget, setRemoveTarget] = useState<CollectLink | undefined>(undefined)
-  const [removing, setRemoving] = useState(false)
+  const [removeShop, setRemoveShop] = useState<CollectShop | undefined>(undefined)
+  const [removeLink, setRemoveLink] = useState<CollectLink | undefined>(undefined)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { setDebounced(query) }, 250)
+    const timer = window.setTimeout(() => { setShopDebounced(shopQuery) }, 250)
     return () => { window.clearTimeout(timer) }
-  }, [query])
+  }, [shopQuery])
 
-  const filters: LinkListFilters = {
-    ...(platform === 'all' ? {} : { platform }),
-    ...(status === 'all' ? {} : { status }),
-    ...(debounced.trim().length === 0 ? {} : { query: debounced.trim() }),
-  }
-  const list = useLinkList(runtime, connected, filters)
-
-  // Light poll so link statuses follow in-flight batches without manual refresh.
   useEffect(() => {
-    if (!connected) return
-    const timer = window.setInterval(() => { list.reload() }, 4000)
-    return () => { window.clearInterval(timer) }
-  }, [connected])
+    const timer = window.setTimeout(() => { setLinkDebounced(linkQuery) }, 250)
+    return () => { window.clearTimeout(timer) }
+  }, [linkQuery])
 
-  const toggleSelect = useCallback((id: CollectLinkId, checked: boolean) => {
-    setSelected((previous) => {
-      const next = new Set(previous)
-      if (checked) next.add(id)
-      else next.delete(id)
-      return next
-    })
-  }, [])
+  const shopFilters: ShopListFilters = {
+    ...(platform === 'all' ? {} : { platform }),
+    ...(shopDebounced.trim().length === 0 ? {} : { query: shopDebounced.trim() }),
+  }
+  const shops = useShopList(runtime, connected, shopFilters)
 
-  const runBatch = useCallback(async (linkIds: readonly CollectLinkId[], label: string) => {
-    setRunning(true)
+  const linkFilters: LinkListFilters = {
+    ...(selection === undefined || selection === UNFILED ? {} : { shopRef: selection }),
+    ...(selection === UNFILED ? { unfiled: true } : {}),
+    ...(linkDebounced.trim().length === 0 ? {} : { query: linkDebounced.trim() }),
+  }
+  const links = useLinkList(runtime, connected, linkFilters)
+
+  // 首次加载后自动选中第一个店铺,让右栏直接有事可做。
+  useEffect(() => {
+    if (selection !== undefined) return
+    const first = shops.state.items[0]
+    if (first !== undefined) setSelection(first.id)
+  }, [selection, shops.state.items])
+
+  const selectedShop = selection === undefined || selection === UNFILED
+    ? undefined
+    : shops.state.items.find(shop => shop.id === selection)
+
+  const grouped = useMemo(() => {
+    return PLATFORMS
+      .map(p => ({ platform: p, shops: shops.state.items.filter(shop => shop.platform === p) }))
+      .filter(group => group.shops.length > 0)
+  }, [shops.state.items])
+
+  const reloadAll = useCallback(() => {
+    shops.reload()
+    links.reload()
+  }, [shops, links])
+
+  const confirmRemoveShop = useCallback(async () => {
+    if (removeShop === undefined) return
+    setBusy(true)
     try {
-      const id = await createBatch(runtime, linkIds)
-      notify(`${label}:批次已创建`)
-      setSelected(new Set())
-      onBatchCreated(id)
+      const result = await shopRemove(runtime, removeShop.id)
+      notify(result.unfiled === 0
+        ? `店铺「${removeShop.name}」已删除`
+        : `店铺「${removeShop.name}」已删除,${result.unfiled} 条商品转为未归类`)
+      setRemoveShop(undefined)
+      if (selection === removeShop.id) setSelection(UNFILED)
+      reloadAll()
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setRunning(false)
+      setBusy(false)
     }
-  }, [runtime, notify, onBatchCreated])
+  }, [runtime, removeShop, selection, notify, reloadAll])
 
-  const confirmRemove = useCallback(async () => {
-    if (removeTarget === undefined) return
-    setRemoving(true)
+  const confirmRemoveLink = useCallback(async () => {
+    if (removeLink === undefined) return
+    setBusy(true)
     try {
-      await linkRemove(runtime, removeTarget.id)
-      notify('链接已删除(采集历史保留)')
-      setRemoveTarget(undefined)
-      list.reload()
+      await linkRemove(runtime, removeLink.id)
+      notify('商品条目已删除')
+      setRemoveLink(undefined)
+      links.reload()
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setRemoving(false)
+      setBusy(false)
     }
-  }, [runtime, removeTarget, notify, list])
+  }, [runtime, removeLink, notify, links])
 
-  const links = list.state.items
+  /** 把一条商品条目按人工确认的内容导入商品 Wiki。 */
+  const importWiki = useCallback(async (link: CollectLink) => {
+    setBusy(true)
+    try {
+      const shopName = link.shopRef === undefined
+        ? undefined
+        : shops.state.items.find(shop => shop.id === link.shopRef)?.name
+      const request: CatalogImportRequest = {
+        source: {
+          platform: link.platform,
+          url: link.url,
+          linkId: String(link.id),
+          ...(shopName === undefined ? {} : { shopName }),
+          ...(link.sku === undefined ? {} : { sku: link.sku }),
+        },
+        listing: {
+          title: displayTitle(link),
+          ...(link.selectedSku === undefined ? {} : { selectedSku: link.selectedSku }),
+          ...(link.price === undefined ? {} : { price: link.price.value, priceRaw: link.price.raw }),
+          ...(link.params === undefined ? {} : { params: link.params }),
+          ...(link.mainImageUrl === undefined ? {} : { mainImageUrl: link.mainImageUrl }),
+        },
+      }
+      const result = await catalogImportCollected(runtime, request)
+      notify(result.created ? '已导入商品 Wiki' : '已更新商品 Wiki 记录')
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }, [runtime, shops.state.items, notify])
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-64">
-          <Search className="absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-8" placeholder="搜索店铺 / SKU / 链接" value={query}
-            onChange={(event) => { setQuery(event.target.value) }} />
-        </div>
-        <Select value={platform} onValueChange={(value) => { setPlatform(value as 'all' | CollectPlatform) }}>
-          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部平台</SelectItem>
-            {PLATFORMS.map(p => <SelectItem key={p} value={p}>{PLATFORM_LABELS[p]}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={status} onValueChange={(value) => { setStatus(value as 'all' | CollectLinkStatus) }}>
-          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            {STATUSES.map(s => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Button variant="outline" size="sm" onClick={() => { list.reload() }}>
-          <RefreshCw className="size-4" /> 刷新
-        </Button>
-        <div className="flex-1" />
-        <Button size="sm" variant="outline" onClick={() => { setCsvOpen(true) }}>CSV 导入</Button>
-        <Button size="sm" variant="outline" onClick={() => { setAddOpen(true) }}>
-          <Plus className="size-4" /> 新增链接
-        </Button>
-        <Button size="sm" disabled={selected.size === 0 || running} onClick={() => { void runBatch([...selected], `采集 ${selected.size} 条链接`) }}>
-          <Play className="size-4" /> 采集所选 ({selected.size})
-        </Button>
-      </div>
-
-      <Card>
+    <div className="grid gap-3 lg:grid-cols-[18rem_1fr]">
+      <Card className="h-fit">
+        <CardHeader className="py-3">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">店铺</CardTitle>
+            <Button size="sm" variant="outline" onClick={() => { setShopDialog({ open: true }) }}>
+              <FolderPlus className="size-4" /> 新增
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2 pt-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input className="pl-8" placeholder="搜索店铺" value={shopQuery}
+                onChange={(event) => { setShopQuery(event.target.value) }} />
+            </div>
+            <Select value={platform} onValueChange={(value) => { setPlatform(value as 'all' | CollectPlatform) }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部平台</SelectItem>
+                {PLATFORMS.map(p => <SelectItem key={p} value={p}>{PLATFORM_LABELS[p]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
         <CardContent className="pt-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10" />
-                <TableHead>商品 / 链接</TableHead>
-                <TableHead className="w-20">平台</TableHead>
-                <TableHead className="w-28">店铺</TableHead>
-                <TableHead className="w-20">状态</TableHead>
-                <TableHead className="w-20">最近价</TableHead>
-                <TableHead className="w-36">最近抓取</TableHead>
-                <TableHead className="w-32">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {list.state.phase === 'loading' && (
-                <TableRow><TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+          <ScrollArea className="h-[26rem]">
+            <div className="flex flex-col gap-1 pr-2">
+              <button
+                type="button"
+                className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${selection === UNFILED ? 'bg-accent' : 'hover:bg-accent/50'}`}
+                onClick={() => { setSelection(UNFILED) }}
+              >
+                <Sparkles className="size-4 shrink-0 text-muted-foreground" />
+                <span>未归类商品</span>
+              </button>
+              {shops.state.phase === 'loading' && <Skeleton className="h-8 w-full" />}
+              {shops.state.phase === 'error' && (
+                <div className="text-sm text-destructive">{shops.state.error}</div>
               )}
-              {list.state.phase === 'error' && (
-                <TableRow><TableCell colSpan={8} className="text-destructive">{list.state.error}</TableCell></TableRow>
+              {shops.state.phase === 'ready' && shops.state.items.length === 0 && (
+                <div className="pt-2 text-sm text-muted-foreground">还没有店铺,先「新增」一个。</div>
               )}
-              {list.state.phase === 'ready' && links.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-muted-foreground">暂无链接,用 CSV 导入或新增链接开始。</TableCell></TableRow>
-              )}
-              {links.map(link => (
-                <TableRow key={String(link.id)}>
-                  <TableCell>
-                    <Checkbox checked={selected.has(link.id)} onCheckedChange={(checked) => { toggleSelect(link.id, checked === true) }} />
-                  </TableCell>
-                  <TableCell className="max-w-72">
-                    <div className="flex items-start gap-2">
-                      <Link2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <div className="truncate text-sm">{link.titleAtAdd ?? link.url}</div>
-                        <div className="truncate text-xs text-muted-foreground">{link.url}</div>
-                        {link.lastError !== undefined && (
-                          <div className="truncate text-xs text-destructive" title={link.lastError}>{link.lastError}</div>
-                        )}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{PLATFORM_LABELS[link.platform]}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm">{link.shopName ?? link.shopId ?? '—'}</TableCell>
-                  <TableCell><Badge variant={link.status === 'ok' ? 'secondary' : link.status === 'error' ? 'destructive' : 'outline'}>{STATUS_LABELS[link.status]}</Badge></TableCell>
-                  <TableCell className="text-sm">{formatPrice(link.lastPrice)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatTime(link.lastCaptureAt)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" disabled={running || link.status === 'running'}
-                        onClick={() => { void runBatch([link.id], `采集 ${link.titleAtAdd ?? link.url.slice(0, 24)}`) }}>
-                        <Play className="size-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => { setDetailLink(link) }}>
-                        <History className="size-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => { setRemoveTarget(link) }}>
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+              {grouped.map(group => (
+                <div key={group.platform} className="pt-2">
+                  <div className="px-1 pb-1 text-xs font-medium text-muted-foreground">
+                    {PLATFORM_LABELS[group.platform]}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {group.shops.map(shop => (
+                      <button
+                        key={String(shop.id)}
+                        type="button"
+                        className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${selection === shop.id ? 'bg-accent' : 'hover:bg-accent/50'}`}
+                        onClick={() => { setSelection(shop.id) }}
+                      >
+                        <Store className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{shop.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          </ScrollArea>
         </CardContent>
       </Card>
 
-      <AddLinkDialog runtime={runtime} connected={connected} open={addOpen} onOpenChange={setAddOpen}
-        notify={notify} onSaved={() => { list.reload() }} />
-      <CsvImportDialog runtime={runtime} connected={connected} open={csvOpen} onOpenChange={setCsvOpen}
-        notify={notify} onSaved={() => { list.reload() }} />
-      <LinkDetailDialog
-        runtime={runtime} connected={connected} link={detailLink}
-        onOpenChange={(open) => { if (!open) setDetailLink(undefined) }}
+      <div className="flex flex-col gap-3">
+        {selectedShop !== undefined && (
+          <Card>
+            <CardHeader className="py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <CardTitle className="truncate text-base">{selectedShop.name}</CardTitle>
+                  <CardDescription className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                    <Badge variant="outline">{PLATFORM_LABELS[selectedShop.platform]}</Badge>
+                    {selectedShop.shopKey !== undefined && <span className="font-mono">{selectedShop.shopKey}</span>}
+                    {selectedShop.homeUrl !== undefined && (
+                      <a className="truncate underline" href={selectedShop.homeUrl} target="_blank" rel="noreferrer">
+                        {selectedShop.homeUrl}
+                      </a>
+                    )}
+                  </CardDescription>
+                  {selectedShop.note !== undefined && (
+                    <p className="pt-1 text-sm text-muted-foreground">{selectedShop.note}</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button size="sm" variant="outline" onClick={() => { setShopDialog({ open: true, shop: selectedShop }) }}>
+                    <Pencil className="size-3.5" /> 编辑
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setRemoveShop(selectedShop) }}>
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+        )}
+        {selection === UNFILED && (
+          <Card>
+            <CardContent className="pt-4 text-sm text-muted-foreground">
+              这些商品还没有归属店铺。打开某条商品的「编辑」选一个店铺,即可把它们归位。
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-56">
+            <Search className="absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input className="pl-8" placeholder="搜索商品标题 / SKU / 链接" value={linkQuery}
+              onChange={(event) => { setLinkQuery(event.target.value) }} />
+          </div>
+          <Button variant="outline" size="sm" onClick={() => { reloadAll() }}>
+            <RefreshCw className="size-4" /> 刷新
+          </Button>
+          <div className="flex-1" />
+          <Button size="sm" variant="outline" disabled={selectedShop === undefined}
+            onClick={() => { setCsvOpen(true) }}>
+            CSV 导入
+          </Button>
+          <Button size="sm" onClick={() => { setProductDialog({ open: true }) }}>
+            <Plus className="size-4" /> 新增商品
+          </Button>
+        </div>
+
+        <Card>
+          <CardContent className="pt-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>商品</TableHead>
+                  <TableHead className="w-20">平台</TableHead>
+                  <TableHead className="w-28">价格</TableHead>
+                  <TableHead className="w-32">SKU</TableHead>
+                  <TableHead className="w-36">更新时间</TableHead>
+                  <TableHead className="w-36">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {links.state.phase === 'loading' && (
+                  <TableRow><TableCell colSpan={6}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+                )}
+                {links.state.phase === 'error' && (
+                  <TableRow><TableCell colSpan={6} className="text-destructive">{links.state.error}</TableCell></TableRow>
+                )}
+                {links.state.phase === 'ready' && links.state.items.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-muted-foreground">
+                      暂无商品条目。用「新增商品」或 CSV 导入录入,也可以让采集助手分析材料后生成草稿。
+                    </TableCell>
+                  </TableRow>
+                )}
+                {links.state.items.map(link => (
+                  <TableRow key={String(link.id)}>
+                    <TableCell className="max-w-72">
+                      <div className="truncate text-sm">{displayTitle(link)}</div>
+                      <div className="truncate text-xs text-muted-foreground">{link.url}</div>
+                    </TableCell>
+                    <TableCell><Badge variant="outline">{PLATFORM_LABELS[link.platform]}</Badge></TableCell>
+                    <TableCell className="text-sm">{link.price?.raw ?? '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">{link.sku ?? '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatTime(link.updatedAt)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" title="编辑"
+                          onClick={() => { setProductDialog({ open: true, link }) }}>
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" title="导入到商品 Wiki"
+                          onClick={() => { void importWiki(link) }}>
+                          <BookOpen className="size-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" title="删除" onClick={() => { setRemoveLink(link) }}>
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <ShopDialog
+        runtime={runtime} notify={notify} open={shopDialog.open} shop={shopDialog.shop}
+        onOpenChange={(open) => { setShopDialog(open ? { open: true, shop: shopDialog.shop } : { open: false }) }}
+        onSaved={reloadAll}
       />
-      <AlertDialog open={removeTarget !== undefined} onOpenChange={(open) => { if (!open) setRemoveTarget(undefined) }}>
+      <ProductDialog
+        runtime={runtime} notify={notify} open={productDialog.open} link={productDialog.link}
+        shops={shops.state.items} defaultShopRef={selectedShop?.id}
+        onOpenChange={(open) => { setProductDialog(open ? { open: true, link: productDialog.link } : { open: false }) }}
+        onSaved={() => { reloadAll() }}
+      />
+      <CsvImportDialog
+        runtime={runtime} notify={notify} open={csvOpen} shop={selectedShop}
+        onOpenChange={setCsvOpen} onSaved={() => { links.reload() }}
+      />
+
+      <AlertDialog open={removeShop !== undefined} onOpenChange={(open) => { if (!open) setRemoveShop(undefined) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除该链接?</AlertDialogTitle>
+            <AlertDialogTitle>删除店铺「{removeShop?.name}」?</AlertDialogTitle>
             <AlertDialogDescription>
-              删除后该链接不再参与采集;已产生的采集历史保留。此操作不可撤销。
+              店铺会被删除,其下商品条目保留并转为「未归类」,不会丢失。此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={removing}>取消</AlertDialogCancel>
-            <AlertDialogAction disabled={removing} onClick={() => { void confirmRemove() }}>
-              {removing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />} 删除
+            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={() => { void confirmRemoveShop() }}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />} 删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={removeLink !== undefined} onOpenChange={(open) => { if (!open) setRemoveLink(undefined) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除该商品条目?</AlertDialogTitle>
+            <AlertDialogDescription>删除后无法恢复。此操作不可撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={() => { void confirmRemoveLink() }}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />} 删除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -387,133 +593,47 @@ function LinksTab({ runtime, connected, notify, onBatchCreated }: TabProps & { r
   )
 }
 
-/** 采集批次:列表 + 选中批次的逐项进度。 */
-function BatchesTab({ runtime, connected, focusBatchId }: {
+interface ShopDialogProps {
   readonly runtime: RxlabClientRuntime
-  readonly connected: boolean
-  readonly focusBatchId?: CollectBatchId
-}) {
-  const batches = useBatchList(runtime, connected)
-  const [selectedId, setSelectedId] = useState<CollectBatchId | undefined>(undefined)
-
-  useEffect(() => {
-    if (!connected) return
-    const timer = window.setInterval(() => { batches.reload() }, 4000)
-    return () => { window.clearInterval(timer) }
-  }, [connected])
-
-  useEffect(() => {
-    if (focusBatchId !== undefined) setSelectedId(focusBatchId)
-  }, [focusBatchId])
-
-  const detail = useBatchDetail(runtime, connected, selectedId)
-  const detailBatch = detail.state.items[0]
-
-  return (
-    <div className="flex flex-col gap-3">
-      <Card>
-        <CardHeader className="py-3">
-          <CardTitle className="text-base">批次列表</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="flex flex-col gap-1">
-            {batches.state.phase === 'loading' && <Skeleton className="h-8 w-full" />}
-            {batches.state.phase === 'error' && <div className="text-destructive text-sm">{batches.state.error}</div>}
-            {batches.state.phase === 'ready' && batches.state.items.length === 0 && (
-              <div className="text-sm text-muted-foreground">暂无批次。在「商品链接」勾选链接后点“采集所选”。</div>
-            )}
-            {batches.state.items.map(batch => (
-              <button key={String(batch.id)} type="button"
-                className={`flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${batch.id === selectedId ? 'bg-accent' : 'hover:bg-accent/50'}`}
-                onClick={() => { setSelectedId(batch.id) }}>
-                <span className="flex items-center gap-2">
-                  <Badge variant={batch.status === 'done' ? 'secondary' : batch.status === 'partial' ? 'destructive' : 'outline'}>
-                    {batch.status === 'done' ? '完成' : batch.status === 'partial' ? '部分失败' : batch.status === 'running' ? '运行中' : '排队中'}
-                  </Badge>
-                  <span className="text-muted-foreground">{formatTime(batch.createdAt)}</span>
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {batch.counts.ok}/{batch.counts.total} 成功
-                </span>
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {selectedId !== undefined && (
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-base">批次进度</CardTitle>
-            <CardDescription className="text-xs">状态:{batchStatusText(detailBatch)}</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <ScrollArea className="h-64">
-              <div className="flex flex-col gap-1 pr-3">
-                {detail.state.phase === 'loading' && <Skeleton className="h-8 w-full" />}
-                {detail.state.phase === 'error' && <div className="text-sm text-destructive">{detail.state.error}</div>}
-                {detailBatch?.items.map(item => (
-                  <div key={String(item.linkId)} className="flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-sm">
-                    <span className="truncate font-mono text-xs text-muted-foreground">{String(item.linkId).slice(0, 8)}</span>
-                    <span className="flex-1 truncate text-xs">
-                      {item.status === 'ok' ? '已采集' : item.status === 'error' ? item.error : '等待中'}
-                    </span>
-                    <Badge variant={item.status === 'ok' ? 'secondary' : item.status === 'error' ? 'destructive' : 'outline'}>
-                      {item.status === 'ok' ? '成功' : item.status === 'error' ? '失败' : '待采'}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-function batchStatusText(batch: CollectBatch | undefined): string {
-  if (batch === undefined) return '—'
-  if (batch.status === 'done') return '完成'
-  if (batch.status === 'partial') return '部分失败(可对失败链接重试)'
-  if (batch.status === 'running') return '运行中'
-  return '排队中'
-}
-
-interface DialogBaseProps extends TabProps {
+  readonly notify: (message: string) => void
   readonly open: boolean
+  readonly shop?: CollectShop | undefined
   readonly onOpenChange: (open: boolean) => void
   readonly onSaved: () => void
 }
 
-/** 新增链接:平台 + URL(必填),店铺名/标题可选。 */
-function AddLinkDialog({ runtime, open, onOpenChange, notify, onSaved }: DialogBaseProps) {
+/** 店铺档案:人工登记平台、店铺名、平台侧标识、主页与备注。 */
+function ShopDialog({ runtime, notify, open, shop, onOpenChange, onSaved }: ShopDialogProps) {
   const [platform, setPlatform] = useState<CollectPlatform>('jd')
-  const [url, setUrl] = useState('')
-  const [shopName, setShopName] = useState('')
-  const [title, setTitle] = useState('')
+  const [name, setName] = useState('')
+  const [shopKey, setShopKey] = useState('')
+  const [homeUrl, setHomeUrl] = useState('')
+  const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (open) {
-      setUrl('')
-      setShopName('')
-      setTitle('')
-      setSaving(false)
-    }
-  }, [open])
+    if (!open) return
+    setPlatform(shop?.platform ?? 'jd')
+    setName(shop?.name ?? '')
+    setShopKey(shop?.shopKey ?? '')
+    setHomeUrl(shop?.homeUrl ?? '')
+    setNote(shop?.note ?? '')
+    setSaving(false)
+  }, [open, shop])
 
   const submit = useCallback(async () => {
-    if (url.trim().length === 0) return
+    if (name.trim().length === 0) return
     setSaving(true)
     try {
-      const result = await linkUpsert(runtime, {
+      await shopUpsert(runtime, {
         platform,
-        url: url.trim(),
-        ...(shopName.trim().length === 0 ? {} : { shopName: shopName.trim() }),
-        ...(title.trim().length === 0 ? {} : { titleAtAdd: title.trim() }),
+        name: name.trim(),
+        ...(shopKey.trim().length === 0 ? {} : { shopKey: shopKey.trim() }),
+        ...(homeUrl.trim().length === 0 ? {} : { homeUrl: homeUrl.trim() }),
+        ...(note.trim().length === 0 ? {} : { note: note.trim() }),
+        ...(shop === undefined ? {} : { id: shop.id }),
       })
-      notify(result.merged ? '链接已存在,已合并更新' : '链接已新增')
+      notify(shop === undefined ? '店铺已登记' : '店铺已更新')
       onSaved()
       onOpenChange(false)
     } catch (cause) {
@@ -521,14 +641,14 @@ function AddLinkDialog({ runtime, open, onOpenChange, notify, onSaved }: DialogB
     } finally {
       setSaving(false)
     }
-  }, [runtime, platform, url, shopName, title, notify, onSaved, onOpenChange])
+  }, [runtime, platform, name, shopKey, homeUrl, note, shop, notify, onSaved, onOpenChange])
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next) }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新增商品链接</DialogTitle>
-          <DialogDescription>登记一条商品详情链接,加入采集资产。</DialogDescription>
+          <DialogTitle>{shop === undefined ? '登记店铺' : '编辑店铺'}</DialogTitle>
+          <DialogDescription>店铺是本模块的组织单位:商品条目都挂在某个店铺下。</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
@@ -542,22 +662,198 @@ function AddLinkDialog({ runtime, open, onOpenChange, notify, onSaved }: DialogB
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>店铺名(可选)</Label>
-              <Input value={shopName} placeholder="如 BOLON暴龙官方旗舰店"
-                onChange={(event) => { setShopName(event.target.value) }} />
+              <Label>店铺名</Label>
+              <Input value={name} placeholder="如 BOLON暴龙官方旗舰店"
+                onChange={(event) => { setName(event.target.value) }} />
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>商品详情链接</Label>
-            <Input value={url} placeholder="https://item.jd.com/100012345678.html"
-              onChange={(event) => { setUrl(event.target.value) }} />
+            <Label>平台侧店铺标识(可选)</Label>
+            <Input value={shopKey} placeholder="平台上的店铺 id / 旺旺号"
+              onChange={(event) => { setShopKey(event.target.value) }} />
           </div>
           <div className="grid gap-1.5">
-            <Label>标题(可选)</Label>
-            <Input value={title} placeholder="便于列表辨认;采集时会覆盖为页面标题"
-              onChange={(event) => { setTitle(event.target.value) }} />
+            <Label>店铺主页(可选)</Label>
+            <Input value={homeUrl} placeholder="https://…"
+              onChange={(event) => { setHomeUrl(event.target.value) }} />
+          </div>
+          <div className="grid gap-1.5">
+            <Label>备注(可选)</Label>
+            <Textarea className="h-20" value={note} onChange={(event) => { setNote(event.target.value) }} />
           </div>
         </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { onOpenChange(false) }} disabled={saving}>取消</Button>
+          <Button onClick={() => { void submit() }} disabled={saving || name.trim().length === 0}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} 保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+interface ProductDialogProps {
+  readonly runtime: RxlabClientRuntime
+  readonly notify: (message: string) => void
+  readonly open: boolean
+  readonly link?: CollectLink | undefined
+  readonly shops: readonly CollectShop[]
+  readonly defaultShopRef?: CollectShopId | undefined
+  readonly onOpenChange: (open: boolean) => void
+  readonly onSaved: () => void
+}
+
+/** 商品条目:全部字段由人工录入,或由人工确认的草稿带入。 */
+function ProductDialog({
+  runtime, notify, open, link, shops, defaultShopRef, onOpenChange, onSaved,
+}: ProductDialogProps) {
+  const [platform, setPlatform] = useState<CollectPlatform>('jd')
+  const [shopRef, setShopRef] = useState<string>('')
+  const [url, setUrl] = useState('')
+  const [title, setTitle] = useState('')
+  const [price, setPrice] = useState('')
+  const [sku, setSku] = useState('')
+  const [selectedSku, setSelectedSku] = useState('')
+  const [mainImageUrl, setMainImageUrl] = useState('')
+  const [buyUrl, setBuyUrl] = useState('')
+  const [params, setParams] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setPlatform(link?.platform ?? 'jd')
+    setShopRef(link?.shopRef === undefined ? (defaultShopRef ?? '') : String(link.shopRef))
+    setUrl(link?.url ?? '')
+    setTitle(link?.title ?? link?.titleAtAdd ?? '')
+    setPrice(link?.price?.raw ?? '')
+    setSku(link?.sku ?? '')
+    setSelectedSku(link?.selectedSku ?? '')
+    setMainImageUrl(link?.mainImageUrl ?? '')
+    setBuyUrl(link?.buyUrl ?? '')
+    setParams(paramsText(link?.params))
+    setNote(link?.note ?? '')
+    setSaving(false)
+  }, [open, link, defaultShopRef])
+
+  const submit = useCallback(async () => {
+    if (url.trim().length === 0) return
+    setSaving(true)
+    try {
+      const priceText = price.trim()
+      const priceValue = priceText.length === 0 ? null : parsePrice(priceText)
+      const parsed = parseParams(params)
+      const result = await linkUpsert(runtime, {
+        platform,
+        url: url.trim(),
+        ...(shopRef === '' ? {} : { shopRef: shopRef as CollectShopId }),
+        ...(title.trim().length === 0 ? {} : { title: title.trim() }),
+        ...(priceText.length === 0 || priceValue === null ? {} : { price: { value: priceValue, raw: priceText } }),
+        ...(sku.trim().length === 0 ? {} : { sku: sku.trim() }),
+        ...(selectedSku.trim().length === 0 ? {} : { selectedSku: selectedSku.trim() }),
+        ...(mainImageUrl.trim().length === 0 ? {} : { mainImageUrl: mainImageUrl.trim() }),
+        ...(buyUrl.trim().length === 0 ? {} : { buyUrl: buyUrl.trim() }),
+        ...(parsed.length === 0 ? {} : { params: parsed }),
+        ...(note.trim().length === 0 ? {} : { note: note.trim() }),
+        ...(link === undefined ? {} : { id: link.id }),
+      })
+      notify(link === undefined
+        ? (result.merged ? '同链接已存在,已合并更新' : '商品条目已新增')
+        : '商品条目已更新')
+      onSaved()
+      onOpenChange(false)
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(false)
+    }
+  }, [
+    runtime, platform, shopRef, url, title, price, sku, selectedSku, mainImageUrl, buyUrl, params, note,
+    link, notify, onSaved, onOpenChange,
+  ])
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next) }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{link === undefined ? '新增商品条目' : '编辑商品条目'}</DialogTitle>
+          <DialogDescription>所有字段由人工填写;采集助手只会产出待确认的草稿。</DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[28rem] pr-3">
+          <div className="grid gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>平台</Label>
+                <Select value={platform} onValueChange={(value) => { setPlatform(value as CollectPlatform) }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PLATFORMS.map(p => <SelectItem key={p} value={p}>{PLATFORM_LABELS[p]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>归属店铺</Label>
+                <Select value={shopRef === '' ? 'none' : shopRef}
+                  onValueChange={(value) => { setShopRef(value === 'none' ? '' : value) }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">未归类</SelectItem>
+                    {shops.map(shop => (
+                      <SelectItem key={String(shop.id)} value={String(shop.id)}>
+                        {PLATFORM_LABELS[shop.platform]} · {shop.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>商品链接</Label>
+              <Input value={url} placeholder="https://item.jd.com/100012345678.html"
+                onChange={(event) => { setUrl(event.target.value) }} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>标题</Label>
+              <Input value={title} onChange={(event) => { setTitle(event.target.value) }} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-1.5">
+                <Label>价格</Label>
+                <Input value={price} placeholder="如 ¥1,280.00"
+                  onChange={(event) => { setPrice(event.target.value) }} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>SKU(可选)</Label>
+                <Input value={sku} onChange={(event) => { setSku(event.target.value) }} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>已选规格(可选)</Label>
+                <Input value={selectedSku} onChange={(event) => { setSelectedSku(event.target.value) }} />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>主图链接(可选)</Label>
+              <Input value={mainImageUrl} placeholder="https://…"
+                onChange={(event) => { setMainImageUrl(event.target.value) }} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>购买链接(可选)</Label>
+              <Input value={buyUrl} placeholder="https://…"
+                onChange={(event) => { setBuyUrl(event.target.value) }} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>规格参数(可选,每行“名称:值”)</Label>
+              <Textarea className="h-24 font-mono text-xs" value={params}
+                placeholder={'材质:TR90\n尺寸:54-18-145'}
+                onChange={(event) => { setParams(event.target.value) }} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>备注(可选)</Label>
+              <Textarea className="h-20" value={note} onChange={(event) => { setNote(event.target.value) }} />
+            </div>
+          </div>
+        </ScrollArea>
         <DialogFooter>
           <Button variant="outline" onClick={() => { onOpenChange(false) }} disabled={saving}>取消</Button>
           <Button onClick={() => { void submit() }} disabled={saving || url.trim().length === 0}>
@@ -569,8 +865,17 @@ function AddLinkDialog({ runtime, open, onOpenChange, notify, onSaved }: DialogB
   )
 }
 
-/** CSV 导入:表头 platform,url + 可选 shopId/shopName/sku/title。 */
-function CsvImportDialog({ runtime, open, onOpenChange, notify, onSaved }: DialogBaseProps) {
+interface CsvImportDialogProps {
+  readonly runtime: RxlabClientRuntime
+  readonly notify: (message: string) => void
+  readonly open: boolean
+  readonly shop: CollectShop | undefined
+  readonly onOpenChange: (open: boolean) => void
+  readonly onSaved: () => void
+}
+
+/** CSV 导入:表头 url + 可选 platform/sku/title,全部导入到当前店铺。 */
+function CsvImportDialog({ runtime, notify, open, shop, onOpenChange, onSaved }: CsvImportDialogProps) {
   const [text, setText] = useState('')
   const [summary, setSummary] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -587,12 +892,11 @@ function CsvImportDialog({ runtime, open, onOpenChange, notify, onSaved }: Dialo
     if (text.trim().length === 0) return
     setSaving(true)
     try {
-      const result = await importLinks(runtime, text)
-      const lines = [
+      const result = await importLinks(runtime, text, shop?.id)
+      setSummary([
         `新增 ${result.created} 条,合并 ${result.updated} 条`,
         ...result.rejected.map(entry => `第 ${entry.row} 行:${entry.reason}`),
-      ]
-      setSummary(lines.join('\n'))
+      ].join('\n'))
       notify('CSV 导入完成')
       onSaved()
     } catch (cause) {
@@ -600,19 +904,21 @@ function CsvImportDialog({ runtime, open, onOpenChange, notify, onSaved }: Dialo
     } finally {
       setSaving(false)
     }
-  }, [runtime, text, notify, onSaved])
+  }, [runtime, text, shop, notify, onSaved])
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next) }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>CSV 导入链接</DialogTitle>
+          <DialogTitle>CSV 导入商品</DialogTitle>
           <DialogDescription>
-            表头:platform,url + 可选 shopId / shopName / sku / title。platform 留空时按 url 自动推断。
+            表头:url + 可选 platform / sku / title。platform 留空时按 url 自动推断。
+            导入的条目全部归到「{shop?.name ?? '未归类'}」。
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
-          <Textarea className="h-48 font-mono text-xs" placeholder={'platform,url,shopName\njd,https://item.jd.com/10120538639231.html,BOLON暴龙官方旗舰店'}
+          <Textarea className="h-48 font-mono text-xs"
+            placeholder={'url,title\nhttps://item.jd.com/10120538639231.html,暴龙 BA7009'}
             value={text} onChange={(event) => { setText(event.target.value) }} />
           {summary !== null && (
             <ScrollArea className="max-h-32">
@@ -631,126 +937,160 @@ function CsvImportDialog({ runtime, open, onOpenChange, notify, onSaved }: Dialo
   )
 }
 
-/** 链接详情:最近一次采集字段 + 历史记录 + 导入到 Wiki。 */
-function LinkDetailDialog({ runtime, connected, link, onOpenChange }: {
-  readonly runtime: RxlabClientRuntime
-  readonly connected: boolean
-  readonly link: CollectLink | undefined
-  readonly onOpenChange: (open: boolean) => void
-}) {
-  const captures = useLinkCaptures(runtime, connected, link?.id)
-  const latest = captures.state.items[0]
-  const [importing, setImporting] = useState(false)
-  const [importMessage, setImportMessage] = useState<string | null>(null)
+/** 待确认草稿:采集助手产出的条目,人工逐条确认后才落库。 */
+function DraftReviewTab({
+  runtime,
+  connected,
+  notify,
+  drafts,
+}: TabProps & { readonly drafts: ListController<CollectDraft> }) {
+  const [busyId, setBusyId] = useState<string | undefined>(undefined)
+  const [fileUnder, setFileUnder] = useState<Record<string, string>>({})
+  const shops = useShopList(runtime, connected, {})
 
-  useEffect(() => {
-    setImporting(false)
-    setImportMessage(null)
-  }, [link?.id])
+  const pending = drafts.state.items
 
-  const importWiki = useCallback(async () => {
-    if (link === undefined || latest === undefined) return
-    setImporting(true)
-    setImportMessage(null)
+  const confirm = useCallback(async (draft: CollectDraft) => {
+    const target = draft.payload.target === 'product' ? fileUnder[String(draft.id)] : undefined
+    setBusyId(String(draft.id))
     try {
-      const request: CatalogImportRequest = {
-        source: {
-          platform: link.platform,
-          url: link.url,
-          linkId: link.id,
-          shopName: link.shopName,
-          sku: link.sku,
-          captureId: latest.id,
-          capturedAt: latest.capturedAt,
-        },
-        listing: {
-          title: latest.fields.title ?? link.titleAtAdd ?? link.url,
-          selectedSku: latest.fields.selectedSku,
-          price: latest.fields.price?.value,
-          priceRaw: latest.fields.price?.raw,
-          params: latest.fields.params,
-          mainImageUrl: latest.fields.mainImageUrl,
-        },
-      }
-      const result = await catalogImportCollected(runtime, request)
-      setImportMessage(result.created ? '已导入商品 Wiki' : '已更新 Wiki 记录（价格/属性合并）')
+      await draftCommit(runtime, draft.id, target === undefined || target === '' ? undefined : target as CollectShopId)
+      notify(draft.payload.target === 'shop' ? '草稿已确认,店铺已登记' : '草稿已确认,商品已入库')
+      drafts.reload()
+      shops.reload()
     } catch (cause) {
-      setImportMessage(cause instanceof Error ? cause.message : String(cause))
+      notify(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setImporting(false)
+      setBusyId(undefined)
     }
-  }, [runtime, link, latest])
+  }, [runtime, notify, drafts, shops, fileUnder])
 
-  const canImport = latest !== undefined && latest.error === undefined
+  const reject = useCallback(async (draft: CollectDraft) => {
+    setBusyId(String(draft.id))
+    try {
+      await draftReject(runtime, draft.id)
+      notify('草稿已拒绝')
+      drafts.reload()
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusyId(undefined)
+    }
+  }, [runtime, notify, drafts])
 
   return (
-    <Dialog open={link !== undefined} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>链接详情</DialogTitle>
-          <DialogDescription className="truncate">{link?.url}</DialogDescription>
-        </DialogHeader>
-        {link !== undefined && (
-          <div className="grid gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <Badge variant="outline">{PLATFORM_LABELS[link.platform]}</Badge>
-              <span>{link.shopName ?? '—'}</span>
-              {link.sku !== undefined && <span className="font-mono text-xs text-muted-foreground">SKU {link.sku}</span>}
-              <Badge variant={link.status === 'ok' ? 'secondary' : link.status === 'error' ? 'destructive' : 'outline'}>
-                {STATUS_LABELS[link.status]}
-              </Badge>
-            </div>
-            <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
-              <div className="text-xs font-medium text-muted-foreground">最近一次采集</div>
-              {captures.state.phase === 'loading' && <Skeleton className="h-8 w-full" />}
-              {latest === undefined && captures.state.phase === 'ready' && (
-                <div className="text-muted-foreground">尚无采集记录。</div>
-              )}
-              {latest !== undefined && (
-                <div className="grid gap-1">
-                  <div className="font-medium">{latest.fields.title ?? '—'}</div>
-                  <div className="text-xs text-muted-foreground">
-                    价格:{latest.fields.price ? `${latest.fields.price.raw}(${latest.fields.price.note ?? ''})` : '—'} | 已选:{latest.fields.selectedSku ?? '—'} | {formatTime(latest.capturedAt)}
-                  </div>
-                  {latest.fields.buyUrl !== undefined && (
-                    <a className="truncate text-xs text-primary underline" href={latest.fields.buyUrl} target="_blank" rel="noreferrer">
-                      购买链接:{latest.fields.buyUrl}
-                    </a>
-                  )}
-                  {latest.error !== undefined && <div className="text-xs text-destructive">{latest.error}</div>}
+    <div className="flex flex-col gap-3">
+      <Card>
+        <CardContent className="flex items-center justify-between gap-3 pt-4 text-sm">
+          <span className="text-muted-foreground">
+            采集助手只能产出草稿。这里每条草稿都需要你确认才会写入店铺或商品台账。
+          </span>
+          <Button variant="outline" size="sm" onClick={() => { drafts.reload() }}>
+            <RefreshCw className="size-4" /> 刷新
+          </Button>
+        </CardContent>
+      </Card>
+
+      {drafts.state.phase === 'loading' && <Skeleton className="h-24 w-full" />}
+      {drafts.state.phase === 'error' && (
+        <Card><CardContent className="pt-4 text-sm text-destructive">{drafts.state.error}</CardContent></Card>
+      )}
+      {drafts.state.phase === 'ready' && pending.length === 0 && (
+        <Card>
+          <CardContent className="pt-4 text-sm text-muted-foreground">
+            没有待确认的草稿。在「采集助手」里把店铺或商品材料交给它,它会生成草稿待你确认。
+          </CardContent>
+        </Card>
+      )}
+
+      {pending.map((draft) => {
+        const busy = busyId === String(draft.id)
+        return (
+          <Card key={String(draft.id)}>
+            <CardHeader className="py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{draft.payload.target === 'shop' ? '店铺' : '商品'}</Badge>
+                  <CardTitle className="text-sm font-medium">{draftSummary(draft.payload)}</CardTitle>
+                </div>
+                <span className="text-xs text-muted-foreground">{formatTime(draft.createdAt)}</span>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 pt-0 text-sm">
+              <DraftFields payload={draft.payload} />
+              {draft.sourceText !== undefined && (
+                <div className="rounded-md border p-2">
+                  <div className="text-xs font-medium text-muted-foreground">来源材料</div>
+                  <pre className="max-h-28 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                    {draft.sourceText}
+                  </pre>
                 </div>
               )}
-            </div>
-            <div className="rounded-md border p-3 text-sm">
-              <div className="text-xs font-medium text-muted-foreground">历史记录</div>
-              {captures.state.items.length === 0 && captures.state.phase === 'ready' && (
-                <div className="mt-1 text-muted-foreground">无历史。</div>
-              )}
-              <div className="mt-1 flex max-h-36 flex-col gap-0.5 overflow-y-auto">
-                {captures.state.items.map(capture => (
-                  <div key={String(capture.id)} className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{formatTime(capture.capturedAt)}</span>
-                    <span>{formatPrice(capture.fields.price?.value)}</span>
-                  </div>
-                ))}
+              <div className="flex flex-wrap items-center gap-2">
+                {draft.payload.target === 'product' && (
+                  <Select
+                    value={fileUnder[String(draft.id)] ?? 'none'}
+                    onValueChange={(value) => {
+                      setFileUnder(previous => ({ ...previous, [String(draft.id)]: value === 'none' ? '' : value }))
+                    }}
+                  >
+                    <SelectTrigger className="w-56"><SelectValue placeholder="归属店铺" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">不指定店铺</SelectItem>
+                      {shops.state.items.map(shop => (
+                        <SelectItem key={String(shop.id)} value={String(shop.id)}>{shop.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <div className="flex-1" />
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => { void reject(draft) }}>
+                  <X className="size-4" /> 拒绝
+                </Button>
+                <Button size="sm" disabled={busy} onClick={() => { void confirm(draft) }}>
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} 确认落库
+                </Button>
               </div>
-            </div>
-            <DialogFooter className="items-center gap-2 sm:justify-between">
-              {importMessage !== null ? (
-                <span className="text-xs text-muted-foreground">{importMessage}</span>
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  {canImport ? '将把最近一次采集导入商品 Wiki。' : '需要一次成功的采集才能导入。'}
-                </span>
-              )}
-              <Button size="sm" disabled={!canImport || importing} onClick={() => { void importWiki() }}>
-                {importing ? <Loader2 className="animate-spin" /> : <BookOpen />}
-                导入到 Wiki
-              </Button>
-            </DialogFooter>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
+/** 草稿正文:按目标表列出它要写入的字段。 */
+function DraftFields({ payload }: { readonly payload: CollectDraftPayload }) {
+  const rows: { label: string; value: string }[] = payload.target === 'shop'
+    ? [
+      { label: '平台', value: PLATFORM_LABELS[payload.platform] },
+      { label: '店铺名', value: payload.name },
+      ...(payload.shopKey === undefined ? [] : [{ label: '店铺标识', value: payload.shopKey }]),
+      ...(payload.homeUrl === undefined ? [] : [{ label: '店铺主页', value: payload.homeUrl }]),
+      ...(payload.note === undefined ? [] : [{ label: '备注', value: payload.note }]),
+    ]
+    : [
+      { label: '平台', value: PLATFORM_LABELS[payload.platform] },
+      { label: '链接', value: payload.url },
+      ...(payload.title === undefined ? [] : [{ label: '标题', value: payload.title }]),
+      ...(payload.price === undefined ? [] : [{ label: '价格', value: payload.price.raw }]),
+      ...(payload.sku === undefined ? [] : [{ label: 'SKU', value: payload.sku }]),
+      ...(payload.selectedSku === undefined ? [] : [{ label: '已选规格', value: payload.selectedSku }]),
+      ...(payload.mainImageUrl === undefined ? [] : [{ label: '主图', value: payload.mainImageUrl }]),
+      ...(payload.buyUrl === undefined ? [] : [{ label: '购买链接', value: payload.buyUrl }]),
+      ...(payload.params === undefined
+        ? []
+        : [{ label: '规格参数', value: payload.params.map(param => `${param.name}:${param.value}`).join(' / ') }]),
+      ...(payload.note === undefined ? [] : [{ label: '备注', value: payload.note }]),
+    ]
+  return (
+    <div className="grid gap-1">
+      {rows.map(row => (
+        <div key={row.label} className="flex gap-2 text-xs">
+          <span className="w-16 shrink-0 text-muted-foreground">{row.label}</span>
+          <span className="min-w-0 flex-1 break-all">{row.value}</span>
+        </div>
+      ))}
+    </div>
   )
 }

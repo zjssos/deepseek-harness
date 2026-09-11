@@ -1,59 +1,62 @@
 /**
- * Model-facing agent browse and discovery tools for the rxlab collector
- * (browser use): `browser_*` tools drive the persistent logged-in chromium
- * session, `collect_discover_submit`/`collect_list_links` read and write the
- * link-asset domain. This module owns schemas, argument validation, result
- * bounds, and model guidance; the browser lives in `CollectBrowserSession`
- * and the data in `CollectController`.
+ * Model-facing tools for the rxlab collect agent. The agent reads material a
+ * person hands it — pasted text, or a page it fetches with the web tools — and
+ * records what it derived as pending drafts: `collect_draft_submit` writes
+ * only to the draft table, and `collect_list_shops` / `collect_list_links`
+ * read what the workbench already holds so the agent can avoid proposing a
+ * duplicate. Nothing the model does reaches the shop or product tables; a
+ * person accepts or rejects each draft in the workbench. This module owns
+ * schemas, argument validation, result bounds, and model guidance; the data
+ * lives in `CollectController`.
  * @module @deepseek-ai/dsh-rxlab-collect/src/tools
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
-import type { CollectDiscoveredLink, CollectLink, CollectPlatform } from './types.ts'
-import { captureSnapshot, formatSnapshot, type PageSnapshot, type SnapshotCaps } from './browse/snapshot.ts'
-import { loginFlowOf } from './browse/login.ts'
+import { platformFromUrl } from './parse.ts'
+import type {
+  CollectDraftPayload,
+  CollectDraftSubmission,
+  CollectLink,
+  CollectPlatform,
+  CollectShop,
+  CollectShopId,
+} from './types.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'rxlab-collect-tools'
 
 /** Services required by the collect agent tool suite. */
-export const inject = ['tools', 'systemPrompt', 'collectBrowser', 'collectController']
+export const inject = ['tools', 'systemPrompt', 'collectController']
 
-/** Default cooperative timeout budget (ms) for one browse tool call. */
-export const DEFAULT_BROWSE_TIMEOUT_MS = 120_000
+/** Default cooperative timeout budget (ms) for one collect tool call. */
+export const DEFAULT_TOOL_TIMEOUT_MS = 30_000
 
-/** Default cap on interactive elements listed in one snapshot. */
-export const DEFAULT_SNAPSHOT_MAX_ELEMENTS = 150
+/** Default cap on drafts accepted by one `collect_draft_submit` call. */
+export const DEFAULT_MAX_SUBMIT_DRAFTS = 100
 
-/** Default cap on body-text characters in one snapshot. */
-export const DEFAULT_SNAPSHOT_MAX_TEXT_CHARS = 8000
+/** Default cap on rows returned by one list call. */
+export const DEFAULT_LIST_LIMIT = 100
 
-/** Default cap on links accepted by one discovery submission. */
-export const DEFAULT_MAX_SUBMIT_LINKS = 200
-
-/** Plugin config: call timeout, snapshot bounds, and the submission bound. */
+/** Plugin config: call timeout and the submission bound. */
 export interface Config {
-  /** Cooperative timeout budget (ms) for each browse tool call. Defaults to 120000. */
+  /** Cooperative timeout budget (ms) for each collect tool call. Defaults to 30000. */
   timeoutMs?: number
-  /** Cap on interactive elements listed in one snapshot. Defaults to 150. */
-  snapshotMaxElements?: number
-  /** Cap on body-text characters in one snapshot. Defaults to 8000. */
-  snapshotMaxTextChars?: number
-  /** Cap on links accepted by one `collect_discover_submit` call. Defaults to 200. */
-  maxSubmitLinks?: number
+  /** Cap on drafts accepted by one `collect_draft_submit` call. Defaults to 100. */
+  maxSubmitDrafts?: number
 }
 
 export const Config: z<Config> = z.object({
-  timeoutMs: z.number().default(DEFAULT_BROWSE_TIMEOUT_MS),
-  snapshotMaxElements: z.number().default(DEFAULT_SNAPSHOT_MAX_ELEMENTS),
-  snapshotMaxTextChars: z.number().default(DEFAULT_SNAPSHOT_MAX_TEXT_CHARS),
-  maxSubmitLinks: z.number().default(DEFAULT_MAX_SUBMIT_LINKS),
+  timeoutMs: z.number().default(DEFAULT_TOOL_TIMEOUT_MS),
+  maxSubmitDrafts: z.number().default(DEFAULT_MAX_SUBMIT_DRAFTS),
 })
 
 /** Complete config after schemastery applies every field default. */
 type ResolvedConfig = Required<Config>
+
+/** The platform vocabulary a draft entry may name. */
+const PLATFORMS: readonly CollectPlatform[] = ['jd', 'taobao', '1688', 'manual']
 
 /** Configured counts and caps must be positive integers. */
 function assertPositiveInteger(name: string, value: number): void {
@@ -62,163 +65,248 @@ function assertPositiveInteger(name: string, value: number): void {
   }
 }
 
-/** Canonical tool input for one discovered link (unbranded, schema-shaped). */
-export interface DiscoveredLinkValue {
-  url: string
+/** One draft entry as the model supplies it (unbranded, schema-shaped). */
+export interface DraftEntryValue {
+  target: string
   platform?: string
-  shopId?: string
-  shopName?: string
+  name?: string
+  shopKey?: string
+  homeUrl?: string
+  url?: string
+  shopRef?: string
   sku?: string
-  titleAtAdd?: string
+  title?: string
+  price?: string
+  selectedSku?: string
+  mainImageUrl?: string
+  buyUrl?: string
+  note?: string
+  params?: readonly { readonly name: string; readonly value: string }[]
+  sourceText?: string
 }
 
-/** Validate the discovery submission list and bounds before the controller sees it. */
-function parseSubmitLinks(
-  links: readonly DiscoveredLinkValue[],
-  maxSubmitLinks: number,
-): readonly CollectDiscoveredLink[] {
-  if (links.length === 0) throw new Error('links must contain at least one entry')
-  if (links.length > maxSubmitLinks) {
-    throw new Error(`links must contain at most ${maxSubmitLinks} entries; split the submission`)
-  }
-  return links.map((link) => {
-    if (typeof link.url !== 'string' || !/^https?:\/\/.+/.test(link.url)) {
-      throw new Error(`each link needs an absolute http(s) url, got: ${link.url}`)
-    }
-    return {
-      url: link.url,
-      ...(link.platform === undefined ? {} : { platform: link.platform as CollectPlatform }),
-      ...(link.shopId === undefined ? {} : { shopId: link.shopId }),
-      ...(link.shopName === undefined ? {} : { shopName: link.shopName }),
-      ...(link.sku === undefined ? {} : { sku: link.sku }),
-      ...(link.titleAtAdd === undefined ? {} : { titleAtAdd: link.titleAtAdd }),
-    }
-  })
+/** Canonical output projection of one stored shop (unbranded, schema-shaped). */
+export interface ShopValue {
+  id: string
+  platform: string
+  name: string
+  updatedAt: string
+  shopKey?: string
+  homeUrl?: string
+  note?: string
 }
 
-/** Render one submission receipt as the model-facing text block. */
-export function formatSubmitValue(value: SubmitReceipt): string {
-  const lines = [
-    `入库完成：新增 ${value.created.length}，合并 ${value.merged.length}，拒绝 ${value.rejected.length}。`,
-  ]
-  for (const link of [...value.created, ...value.merged]) {
-    lines.push(`- ${link.platform} ${link.url}${link.shopName === undefined ? '' : ` （${link.shopName}）`}`)
-  }
-  for (const rejection of value.rejected) {
-    lines.push(`- 拒绝 ${rejection.link.url}: ${rejection.reason}`)
-  }
-  return lines.join('\n')
-}
-
-/** Canonical output projection of one stored link asset (unbranded, schema-shaped). */
+/** Canonical output projection of one stored product entry (unbranded, schema-shaped). */
 export interface LinkValue {
   id: string
   platform: string
   url: string
   updatedAt: string
-  status: string
-  shopId?: string
-  shopName?: string
+  shopRef?: string
   sku?: string
-  mobileUrl?: string
-  titleAtAdd?: string
-  lastCaptureAt?: string
-  lastCaptureId?: string
-  lastPrice?: number
-  lastError?: string
-  rescan?: boolean
+  title?: string
+  price?: number
+  priceRaw?: string
+  selectedSku?: string
+  mainImageUrl?: string
+  buyUrl?: string
+  note?: string
 }
 
-/** The discovery receipt as the tool's canonical output value. */
-export interface SubmitReceipt {
-  created: LinkValue[]
-  merged: LinkValue[]
-  rejected: { link: DiscoveredLinkValue; reason: string }[]
+/** Canonical output projection of one stored draft (unbranded, schema-shaped). */
+export interface DraftValue {
+  id: string
+  target: string
+  status: string
+  /** One-line description of what the draft would write. */
+  summary: string
+  createdAt: string
 }
 
-/** Project one discovered link onto the unbranded schema value shape. */
-function projectDiscovered(link: CollectDiscoveredLink): DiscoveredLinkValue {
-  return {
-    url: link.url,
-    ...(link.platform === undefined ? {} : { platform: link.platform }),
-    ...(link.shopId === undefined ? {} : { shopId: link.shopId }),
-    ...(link.shopName === undefined ? {} : { shopName: link.shopName }),
-    ...(link.sku === undefined ? {} : { sku: link.sku }),
-    ...(link.titleAtAdd === undefined ? {} : { titleAtAdd: link.titleAtAdd }),
+/** The draft submission receipt as the tool's canonical output value. */
+export interface DraftSubmitReceipt {
+  created: DraftValue[]
+  rejected: { target: string; reason: string }[]
+}
+
+/** Brand one raw shop key read from model input; the controller rejects an unknown one. */
+function asShopId(value: string): CollectShopId {
+  return value as CollectShopId
+}
+
+/** Resolve the platform a draft names, falling back to the one its url implies. */
+function resolvePlatform(named: string | undefined, url: string | undefined): CollectPlatform {
+  const value = named?.trim()
+  if (value !== undefined && value.length > 0) {
+    if (!(PLATFORMS as readonly string[]).includes(value)) {
+      throw new Error(`platform must be one of ${PLATFORMS.join('/')}, got: ${value}`)
+    }
+    return value as CollectPlatform
   }
+  const guessed = url === undefined ? undefined : platformFromUrl(url)
+  if (guessed === undefined) {
+    throw new Error('platform is required when the url does not reveal one')
+  }
+  return guessed
 }
 
 /**
- * Project one stored link onto the unbranded schema value shape. Branded ids
+ * Parse a displayed price text into its numeric value. Returns null when the
+ * text holds no digits, so an unreadable price leaves the field absent rather
+ * than storing a wrong number.
+ */
+export function parsePriceText(raw: string): number | null {
+  const cleaned = raw.replace(/[^\d.]/g, '')
+  if (cleaned === '' || cleaned === '.') return null
+  const value = Number(cleaned)
+  return Number.isFinite(value) ? value : null
+}
+
+/** Project one entry the model submitted onto the controller's draft payload. */
+function toDraftPayload(entry: DraftEntryValue): CollectDraftPayload {
+  if (entry.target !== 'shop' && entry.target !== 'product') {
+    throw new Error(`target must be 'shop' or 'product', got: ${entry.target}`)
+  }
+  if (entry.target === 'shop') {
+    const name = entry.name?.trim()
+    if (name === undefined || name.length === 0) throw new Error('a shop entry needs a name')
+    return {
+      target: 'shop',
+      platform: resolvePlatform(entry.platform, entry.homeUrl),
+      name,
+      ...(entry.shopKey === undefined ? {} : { shopKey: entry.shopKey }),
+      ...(entry.homeUrl === undefined ? {} : { homeUrl: entry.homeUrl }),
+      ...(entry.note === undefined ? {} : { note: entry.note }),
+    }
+  }
+  const url = entry.url?.trim()
+  if (url === undefined || url.length === 0) throw new Error('a product entry needs a url')
+  const priceText = entry.price?.trim()
+  const priceValue = priceText === undefined || priceText.length === 0 ? null : parsePriceText(priceText)
+  return {
+    target: 'product',
+    platform: resolvePlatform(entry.platform, url),
+    url,
+    ...(entry.shopRef === undefined ? {} : { shopRef: asShopId(entry.shopRef) }),
+    ...(entry.sku === undefined ? {} : { sku: entry.sku }),
+    ...(entry.title === undefined ? {} : { title: entry.title }),
+    ...(priceText === undefined || priceText.length === 0 || priceValue === null
+      ? {}
+      : { price: { value: priceValue, raw: priceText } }),
+    ...(entry.selectedSku === undefined ? {} : { selectedSku: entry.selectedSku }),
+    ...(entry.params === undefined ? {} : { params: entry.params }),
+    ...(entry.mainImageUrl === undefined ? {} : { mainImageUrl: entry.mainImageUrl }),
+    ...(entry.buyUrl === undefined ? {} : { buyUrl: entry.buyUrl }),
+    ...(entry.note === undefined ? {} : { note: entry.note }),
+  }
+}
+
+/** Validate the submitted entries and their bound before the controller sees them. */
+function parseSubmitDrafts(
+  entries: readonly DraftEntryValue[],
+  maxSubmitDrafts: number,
+): readonly CollectDraftSubmission[] {
+  if (entries.length === 0) throw new Error('drafts must contain at least one entry')
+  if (entries.length > maxSubmitDrafts) {
+    throw new Error(`drafts must contain at most ${maxSubmitDrafts} entries; split the submission`)
+  }
+  return entries.map(entry => ({
+    payload: toDraftPayload(entry),
+    ...(entry.sourceText === undefined ? {} : { sourceText: entry.sourceText }),
+  }))
+}
+
+/** One-line description of what one draft payload would write. */
+export function describeDraftPayload(payload: CollectDraftPayload): string {
+  if (payload.target === 'shop') return `店铺 ${payload.platform} ${payload.name}`
+  const label = payload.title === undefined ? payload.url : payload.title
+  return `商品 ${payload.platform} ${label}${payload.price === undefined ? '' : ` ${payload.price.raw}`}`
+}
+
+/** Render one draft submission receipt as the model-facing text block. */
+export function formatDraftSubmit(value: DraftSubmitReceipt): string {
+  const lines = [
+    `已提交待确认草稿 ${value.created.length} 条，拒绝 ${value.rejected.length} 条。`,
+  ]
+  for (const draft of value.created) lines.push(`- ${draft.summary}（草稿 ${draft.id}，待人工确认）`)
+  for (const rejection of value.rejected) lines.push(`- 拒绝 ${rejection.target}: ${rejection.reason}`)
+  if (value.created.length > 0) {
+    lines.push('这些草稿不会自动入库：需要用户在采集模块逐条确认后才写入。请勿重复提交同一批信息。')
+  }
+  return lines.join('\n')
+}
+
+/** Render one shop list as the model-facing text block. */
+export function formatShopList(items: readonly ShopValue[]): string {
+  if (items.length === 0) return '当前没有已登记的店铺。'
+  return [
+    `共 ${items.length} 个已登记店铺：`,
+    ...items.map(shop =>
+      `- ${shop.platform} ${shop.name}（id=${shop.id}${shop.homeUrl === undefined ? '' : ` ${shop.homeUrl}`}）`),
+  ].join('\n')
+}
+
+/** Render one product list as the model-facing text block. */
+export function formatLinkList(items: readonly LinkValue[]): string {
+  if (items.length === 0) return '当前没有已登记的商品条目。'
+  return [
+    `共 ${items.length} 条已登记商品条目：`,
+    ...items.map(link =>
+      `- ${link.platform} ${link.url}${link.title === undefined ? '' : ` ${link.title}`}`
+      + (link.shopRef === undefined ? '' : `（店铺 ${link.shopRef}）`)),
+  ].join('\n')
+}
+
+/**
+ * Project one stored shop onto the unbranded schema value shape. Branded ids
  * and `T | undefined` optional fields collapse to plain JSON field presence.
  */
+function projectShop(shop: CollectShop): ShopValue {
+  return {
+    id: String(shop.id),
+    platform: shop.platform,
+    name: shop.name,
+    updatedAt: shop.updatedAt,
+    ...(shop.shopKey === undefined ? {} : { shopKey: shop.shopKey }),
+    ...(shop.homeUrl === undefined ? {} : { homeUrl: shop.homeUrl }),
+    ...(shop.note === undefined ? {} : { note: shop.note }),
+  }
+}
+
+/** Project one stored product entry onto the unbranded schema value shape. */
 function projectLink(link: CollectLink): LinkValue {
   return {
     id: String(link.id),
     platform: link.platform,
     url: link.url,
     updatedAt: link.updatedAt,
-    status: link.status,
-    ...(link.shopId === undefined ? {} : { shopId: link.shopId }),
-    ...(link.shopName === undefined ? {} : { shopName: link.shopName }),
+    ...(link.shopRef === undefined ? {} : { shopRef: String(link.shopRef) }),
     ...(link.sku === undefined ? {} : { sku: link.sku }),
-    ...(link.mobileUrl === undefined ? {} : { mobileUrl: link.mobileUrl }),
-    ...(link.titleAtAdd === undefined ? {} : { titleAtAdd: link.titleAtAdd }),
-    ...(link.lastCaptureAt === undefined ? {} : { lastCaptureAt: link.lastCaptureAt }),
-    ...(link.lastCaptureId === undefined ? {} : { lastCaptureId: String(link.lastCaptureId) }),
-    ...(link.lastPrice === undefined ? {} : { lastPrice: link.lastPrice }),
-    ...(link.lastError === undefined ? {} : { lastError: link.lastError }),
-    ...(link.rescan === undefined ? {} : { rescan: link.rescan }),
+    ...(link.title === undefined ? {} : { title: link.title }),
+    ...(link.price === undefined ? {} : { price: link.price.value, priceRaw: link.price.raw }),
+    ...(link.selectedSku === undefined ? {} : { selectedSku: link.selectedSku }),
+    ...(link.mainImageUrl === undefined ? {} : { mainImageUrl: link.mainImageUrl }),
+    ...(link.buyUrl === undefined ? {} : { buyUrl: link.buyUrl }),
+    ...(link.note === undefined ? {} : { note: link.note }),
   }
 }
 
-/** Render one link list as the model-facing text block. */
-export function formatLinkList(items: readonly LinkValue[]): string {
-  if (items.length === 0) return '当前没有匹配的链接资产。'
-  return [
-    `共 ${items.length} 条链接资产：`,
-    ...items.map(link =>
-      `- ${link.platform} ${link.url} [${link.status}]${
-        link.shopName === undefined ? '' : ` ${link.shopName}`
-      }${link.sku === undefined ? '' : ` sku=${link.sku}`}`),
-  ].join('\n')
-}
-
-/** Stale-ref error telling the model exactly how to recover. */
-function staleRefError(ref: number, lastElements: number): Error {
-  return new Error(
-    `ref ${ref} 不在最近一次 browser_snapshot 的元素范围(1–${lastElements})内；`
-    + '页面可能已经变化，请重新调用 browser_snapshot 后再引用新的 ref。',
-  )
-}
-
-/** Output spec of one captured page (the {@link PageSnapshot} fields). */
-const SNAPSHOT_VALUE = {
+/** Output spec of one registered shop (the {@link ShopValue} fields). */
+const SHOP_VALUE = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    url: { type: 'string', required: true },
-    title: { type: 'string', required: true },
-    text: { type: 'string', required: true },
-    elements: {
-      type: 'array',
-      required: true,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          ref: { type: 'number', required: true },
-          tag: { type: 'string', required: true },
-          label: { type: 'string', required: true },
-        },
-      },
-    },
-    textTruncated: { type: 'boolean', required: true },
-    elementsTruncated: { type: 'boolean', required: true },
+    id: { type: 'string', required: true },
+    platform: { type: 'string', required: true },
+    name: { type: 'string', required: true },
+    updatedAt: { type: 'string', required: true },
+    shopKey: { type: 'string' },
+    homeUrl: { type: 'string' },
+    note: { type: 'string' },
   },
 } as const
 
-/** Output spec of one stored link asset (the {@link CollectLink} fields). */
+/** Output spec of one product entry (the {@link LinkValue} fields). */
 const LINK_VALUE = {
   type: 'object',
   additionalProperties: false,
@@ -227,309 +315,188 @@ const LINK_VALUE = {
     platform: { type: 'string', required: true },
     url: { type: 'string', required: true },
     updatedAt: { type: 'string', required: true },
-    status: { type: 'string', required: true },
-    shopId: { type: 'string' },
-    shopName: { type: 'string' },
+    shopRef: { type: 'string' },
     sku: { type: 'string' },
-    mobileUrl: { type: 'string' },
-    titleAtAdd: { type: 'string' },
-    lastCaptureAt: { type: 'string' },
-    lastCaptureId: { type: 'string' },
-    lastPrice: { type: 'number' },
-    lastError: { type: 'string' },
-    rescan: { type: 'boolean' },
+    title: { type: 'string' },
+    price: { type: 'number' },
+    priceRaw: { type: 'string' },
+    selectedSku: { type: 'string' },
+    mainImageUrl: { type: 'string' },
+    buyUrl: { type: 'string' },
+    note: { type: 'string' },
   },
 } as const
 
-/** Output spec of one rejected discovery entry. */
-const REJECTED_LINK_VALUE = {
+/** Input spec of one draft entry the model submits. */
+const DRAFT_ENTRY_PARAM = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    link: {
-      type: 'object',
-      required: true,
-      additionalProperties: false,
-      properties: {
-        url: { type: 'string', required: true },
-        platform: { type: 'string' },
-        shopId: { type: 'string' },
-        shopName: { type: 'string' },
-        sku: { type: 'string' },
-        titleAtAdd: { type: 'string' },
+    target: { type: 'string', required: true, description: "'shop' or 'product'." },
+    platform: { type: 'string', description: 'jd / taobao / 1688 / manual; inferred from the url when omitted.' },
+    name: { type: 'string', description: 'Shop name (target=shop).' },
+    shopKey: { type: 'string', description: 'Platform-side shop id (target=shop).' },
+    homeUrl: { type: 'string', description: 'Shop home page url (target=shop).' },
+    url: { type: 'string', description: 'Product page url (target=product).' },
+    shopRef: { type: 'string', description: 'Id of a registered shop to file the product under.' },
+    sku: { type: 'string', description: 'Platform product id (target=product).' },
+    title: { type: 'string', description: 'Product title (target=product).' },
+    price: { type: 'string', description: 'Displayed price text exactly as the material showed it (target=product).' },
+    selectedSku: { type: 'string', description: 'Selected variant label (target=product).' },
+    mainImageUrl: { type: 'string', description: 'Main image url (target=product).' },
+    buyUrl: { type: 'string', description: 'Purchase link (target=product).' },
+    note: { type: 'string', description: 'Free-form note.' },
+    params: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', required: true },
+          value: { type: 'string', required: true },
+        },
       },
+      description: 'Spec name/value pairs such as 材质/尺寸 (target=product).',
     },
-    reason: { type: 'string', required: true },
-  },
-} as const
-
-/** Output spec of one discovery submission receipt. */
-const SUBMIT_VALUE = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    created: { type: 'array', required: true, items: LINK_VALUE },
-    merged: { type: 'array', required: true, items: LINK_VALUE },
-    rejected: { type: 'array', required: true, items: REJECTED_LINK_VALUE },
+    sourceText: { type: 'string', description: 'The material this entry was derived from, kept for the review step.' },
   },
 } as const
 
 /**
- * Register the collect agent browse and discovery tools plus their
- * system-prompt guidance. All registrations are effect-scoped and unregister
- * on plugin dispose. Browse tools stay exclusive (they share one browser
- * session); `collect_list_links` is the only read-only concurrency opt-in.
+ * Register the collect draft and lookup tools plus their system-prompt
+ * guidance. All registrations are effect-scoped and unregister on plugin
+ * dispose. The lookup tools are read-only and opt into concurrency; the
+ * submission tool writes pending drafts only.
  * @param ctx - context whose `tools` and `systemPrompt` registries receive
- *   the registrations, resolved with the browser session and the collector.
+ *   the registrations, resolved with the collect controller.
  * @param config - schemastery-resolved plugin config.
  */
 export function apply(ctx: Context, config: Config): void {
   // schemastery (Config) has already filled every defaulted field.
   const resolved = config as ResolvedConfig
   assertPositiveInteger('timeoutMs', resolved.timeoutMs)
-  assertPositiveInteger('snapshotMaxElements', resolved.snapshotMaxElements)
-  assertPositiveInteger('snapshotMaxTextChars', resolved.snapshotMaxTextChars)
-  assertPositiveInteger('maxSubmitLinks', resolved.maxSubmitLinks)
+  assertPositiveInteger('maxSubmitDrafts', resolved.maxSubmitDrafts)
 
-  const browser = ctx.collectBrowser
   const controller = ctx.collectController
-  const caps: SnapshotCaps = {
-    maxElements: resolved.snapshotMaxElements,
-    maxTextChars: resolved.snapshotMaxTextChars,
-  }
-  // Element count of the most recent snapshot; click/type validate refs against it.
-  let lastElements = 0
 
   ctx.systemPrompt.section({
-    name: 'tool:browser',
-    order: ctx.systemPrompt.getSectionOrder('TOOL_BROWSER'),
+    name: 'tool:collect',
+    order: ctx.systemPrompt.getSectionOrder('TOOL_COLLECT'),
     text: [
-      'The browser_* tools drive one persistent logged-in chromium for rxlab product-link discovery.',
-      'Each page action returns a fresh snapshot; act only on refs from the most recent snapshot, and re-snapshot after the page changes.',
-      'The tools keep a politeness delay between page loads; never bulk-crawl and respect the platform.',
-      'When a page reports a login wall, call browser_login with the platform and ask the person to complete the sign-in in the opened window.',
-      'Collect shop and product links as you browse, then persist them with collect_discover_submit; check existing assets with collect_list_links first to avoid duplicates.',
+      'The collect_* tools serve the rxlab 商品采集 module, which a person drives by hand.',
+      'collect_draft_submit records structured entries you derived from material the person gave you; it never writes a shop or a product entry directly.',
+      'A person reviews every draft in the workbench and accepts or rejects it, so submit only what the material actually supports.',
+      'Call collect_list_shops and collect_list_links first so you never propose a shop or product the workbench already holds.',
     ].join(' '),
   })
 
-  /** Shared execute body: run one page action, then return a fresh snapshot. */
-  const snapshotAfter = async (
-    action: (page: import('playwright').Page) => Promise<void>,
-    signal: AbortSignal,
-  ): Promise<PageSnapshot> => {
-    const page = await browser.page()
-    await action(page)
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, browser.navigateDelayMs)
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer)
-        reject(new Error('操作已取消', { cause: signal.reason }))
-      }, { once: true })
-    })
-    const snapshot = await captureSnapshot(page, caps)
-    lastElements = snapshot.elements.length
-    return snapshot
-  }
-
   ctx.tools.register(defineTool({
-    name: 'browser_navigate',
-    description: 'Open a URL in the persistent collect browser and return a readable page snapshot with clickable element refs.',
+    name: 'collect_draft_submit',
+    description: 'Record shop and product entries derived from material the person provided as pending drafts for their review. Nothing reaches the shop or product tables until a person accepts a draft.',
     parameters: {
-      url: { type: 'string', required: true, description: 'Absolute http(s) URL to open.' },
-    },
-    output: {
-      schema: SNAPSHOT_VALUE,
-      render: (_args, value) => [{ type: 'text', text: formatSnapshot(value) }],
-    },
-    timeoutMs: resolved.timeoutMs,
-    async execute(args, exec) {
-      return snapshotAfter(
-        page => page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 60_000 }).then(() => undefined),
-        exec.signal,
-      )
-    },
-    presentCall: args => ({ card: 'generic', title: `浏览 ${args.url}` }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'browser_snapshot',
-    description: 'Re-read the current page as a readable snapshot with clickable element refs.',
-    parameters: {},
-    output: {
-      schema: SNAPSHOT_VALUE,
-      render: (_args, value) => [{ type: 'text', text: formatSnapshot(value) }],
-    },
-    timeoutMs: resolved.timeoutMs,
-    isConcurrencySafe: () => false,
-    async execute(_args, exec) {
-      return snapshotAfter(() => Promise.resolve(), exec.signal)
-    },
-    presentCall: () => ({ card: 'generic', title: '读取当前页面' }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'browser_click',
-    description: 'Click one element from the latest snapshot by its ref, then return the refreshed snapshot.',
-    parameters: {
-      ref: { type: 'number', required: true, description: 'Element ref from the latest browser_snapshot.' },
-    },
-    output: {
-      schema: SNAPSHOT_VALUE,
-      render: (_args, value) => [{ type: 'text', text: formatSnapshot(value) }],
-    },
-    timeoutMs: resolved.timeoutMs,
-    async execute(args, exec) {
-      if (!Number.isInteger(args.ref) || args.ref < 1 || args.ref > lastElements) {
-        throw staleRefError(args.ref, lastElements)
-      }
-      return snapshotAfter(
-        page => page.click(`[data-dsh-ref="${args.ref}"]`, { timeout: 15_000 }).then(() => undefined),
-        exec.signal,
-      )
-    },
-    presentCall: args => ({ card: 'generic', title: `点击元素 #${args.ref}` }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'browser_type',
-    description: 'Fill one input element from the latest snapshot by its ref, optionally pressing Enter, then return the refreshed snapshot.',
-    parameters: {
-      ref: { type: 'number', required: true, description: 'Input element ref from the latest browser_snapshot.' },
-      text: { type: 'string', required: true, description: 'Text to fill in.' },
-      submit: { type: 'boolean', description: 'Press Enter after filling (for search boxes). Defaults to false.' },
-    },
-    output: {
-      schema: SNAPSHOT_VALUE,
-      render: (_args, value) => [{ type: 'text', text: formatSnapshot(value) }],
-    },
-    timeoutMs: resolved.timeoutMs,
-    async execute(args, exec) {
-      if (!Number.isInteger(args.ref) || args.ref < 1 || args.ref > lastElements) {
-        throw staleRefError(args.ref, lastElements)
-      }
-      return snapshotAfter(async (page) => {
-        await page.fill(`[data-dsh-ref="${args.ref}"]`, args.text, { timeout: 15_000 })
-        if (args.submit === true) await page.keyboard.press('Enter')
-      }, exec.signal)
-    },
-    presentCall: args => ({ card: 'generic', title: `输入「${args.text.slice(0, 40)}」` }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'browser_scroll',
-    description: 'Scroll the current page and return the refreshed snapshot.',
-    parameters: {
-      amount: { type: 'number', description: 'Pixels to scroll; positive scrolls down, negative scrolls up. Defaults to 800.' },
-    },
-    output: {
-      schema: SNAPSHOT_VALUE,
-      render: (_args, value) => [{ type: 'text', text: formatSnapshot(value) }],
-    },
-    timeoutMs: resolved.timeoutMs,
-    async execute(args, exec) {
-      const amount = args.amount ?? 800
-      return snapshotAfter(page => page.mouse.wheel(0, amount).then(() => undefined), exec.signal)
-    },
-    presentCall: args => ({ card: 'generic', title: `滚动页面 ${args.amount ?? 800}px` }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'browser_back',
-    description: 'Go back one page in the persistent collect browser and return the refreshed snapshot.',
-    parameters: {},
-    output: {
-      schema: SNAPSHOT_VALUE,
-      render: (_args, value) => [{ type: 'text', text: formatSnapshot(value) }],
-    },
-    timeoutMs: resolved.timeoutMs,
-    async execute(_args, exec) {
-      return snapshotAfter(
-        page => page.goBack({ waitUntil: 'domcontentloaded', timeout: 60_000 }).then(() => undefined),
-        exec.signal,
-      )
-    },
-    presentCall: () => ({ card: 'generic', title: '返回上一页' }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'browser_login',
-    description: 'Open a headed login window for one platform; the person completes the sign-in there, and the saved login state is verified before this returns.',
-    parameters: {
-      platform: { type: 'string', required: true, description: 'Platform to log into (e.g. jd).' },
-      url: { type: 'string', description: 'Login entry URL; defaults to the platform login page.' },
+      drafts: {
+        type: 'array',
+        required: true,
+        items: DRAFT_ENTRY_PARAM,
+        description: `Draft entries to propose; 1–${resolved.maxSubmitDrafts} per call. Every entry needs a target and either a name (shop) or a url (product).`,
+      },
     },
     output: {
       schema: {
         type: 'object',
         additionalProperties: false,
         properties: {
-          ok: { type: 'boolean', required: true },
-          detail: { type: 'string', required: true },
+          created: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                target: { type: 'string', required: true },
+                status: { type: 'string', required: true },
+                summary: { type: 'string', required: true },
+                createdAt: { type: 'string', required: true },
+              },
+            },
+          },
+          rejected: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                target: { type: 'string', required: true },
+                reason: { type: 'string', required: true },
+              },
+            },
+          },
         },
       },
-      render: (_args, value) => [{
-        type: 'text',
-        text: value.ok ? `登录成功：${value.detail}` : `登录未完成：${value.detail}`,
-      }],
+      render: (_args, value) => [{ type: 'text', text: formatDraftSubmit(value) }],
     },
     timeoutMs: resolved.timeoutMs,
     async execute(args) {
-      const flow = loginFlowOf(args.platform as CollectPlatform)
-      if (flow === undefined) {
-        throw new Error(`平台 ${args.platform} 暂未提供登录流程；请告知用户手动登录后重试`)
+      const submissions = parseSubmitDrafts(args.drafts, resolved.maxSubmitDrafts)
+      const result = await controller.submitDrafts(submissions)
+      return {
+        created: result.created.map(draft => ({
+          id: String(draft.id),
+          target: draft.payload.target,
+          status: draft.status,
+          summary: describeDraftPayload(draft.payload),
+          createdAt: draft.createdAt,
+        })),
+        rejected: result.rejected.map(rejection => ({
+          target: rejection.payload.target,
+          reason: rejection.reason,
+        })),
       }
-      return browser.login(args.url ?? flow.entryUrl, flow.loggedIn)
     },
-    presentCall: args => ({ card: 'generic', title: `打开 ${args.platform} 登录窗口` }),
+    presentCall: args => ({ card: 'generic', title: `提交 ${args.drafts.length} 条待确认草稿` }),
   }))
 
   ctx.tools.register(defineTool({
-    name: 'collect_discover_submit',
-    description: 'Persist shop and product links discovered by browsing into the rxlab_collect domain. Each entry is validated independently; duplicates merge.',
+    name: 'collect_list_shops',
+    description: 'List the shops the workbench already holds, so a proposed shop is never a duplicate.',
     parameters: {
-      links: {
-        type: 'array',
-        required: true,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            url: { type: 'string', required: true },
-            platform: { type: 'string' },
-            shopId: { type: 'string' },
-            shopName: { type: 'string' },
-            sku: { type: 'string' },
-            titleAtAdd: { type: 'string' },
-          },
-        },
-        description: `Discovered link entries; 1–${resolved.maxSubmitLinks} per call. platform may be omitted to let the host guess from the url.`,
-      },
+      platform: { type: 'string', description: 'Restrict to one platform.' },
+      query: { type: 'string', description: 'Case-insensitive substring matched against shop name, key, and home url.' },
+      limit: { type: 'number', description: `Maximum rows to return; defaults to ${DEFAULT_LIST_LIMIT}.` },
     },
     output: {
-      schema: SUBMIT_VALUE,
-      render: (_args, value) => [{ type: 'text', text: formatSubmitValue(value) }],
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          items: { type: 'array', required: true, items: SHOP_VALUE },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: formatShopList(value.items) }],
     },
     timeoutMs: resolved.timeoutMs,
+    isConcurrencySafe: () => true,
     async execute(args) {
-      const links = parseSubmitLinks(args.links, resolved.maxSubmitLinks)
-      const result = await controller.submitDiscovered(links)
-      // Project the controller receipt onto the unbranded canonical output value.
-      return {
-        created: result.created.map(projectLink),
-        merged: result.merged.map(projectLink),
-        rejected: result.rejected.map(rejection => ({ link: projectDiscovered(rejection.link), reason: rejection.reason })),
-      }
+      const limit = Math.min(Math.max(args.limit ?? DEFAULT_LIST_LIMIT, 1), 500)
+      const { shops } = await controller.listShops({
+        ...(args.platform === undefined ? {} : { platform: args.platform as CollectPlatform }),
+        ...(args.query === undefined ? {} : { query: args.query }),
+      })
+      return { items: shops.slice(0, limit).map(projectShop) }
     },
-    presentCall: args => ({ card: 'generic', title: `入库 ${args.links.length} 条链接` }),
+    presentCall: args => ({ card: 'generic', title: `查询店铺${args.query === undefined ? '' : `「${args.query}」`}` }),
   }))
 
   ctx.tools.register(defineTool({
     name: 'collect_list_links',
-    description: 'List stored link assets so discovery can skip urls already collected.',
+    description: 'List the product entries the workbench already holds, so a proposed product is never a duplicate.',
     parameters: {
       platform: { type: 'string', description: 'Restrict to one platform.' },
-      query: { type: 'string', description: 'Case-insensitive substring matched against shop, sku, and url.' },
-      limit: { type: 'number', description: 'Maximum rows to return; defaults to 100.' },
+      shopRef: { type: 'string', description: 'Restrict to one registered shop id.' },
+      query: { type: 'string', description: 'Case-insensitive substring matched against title, sku, and url.' },
+      limit: { type: 'number', description: `Maximum rows to return; defaults to ${DEFAULT_LIST_LIMIT}.` },
     },
     output: {
       schema: {
@@ -544,13 +511,14 @@ export function apply(ctx: Context, config: Config): void {
     timeoutMs: resolved.timeoutMs,
     isConcurrencySafe: () => true,
     async execute(args) {
-      const limit = Math.min(Math.max(args.limit ?? 100, 1), 500)
+      const limit = Math.min(Math.max(args.limit ?? DEFAULT_LIST_LIMIT, 1), 500)
       const { items } = await controller.listLinks({
         ...(args.platform === undefined ? {} : { platform: args.platform as CollectPlatform }),
+        ...(args.shopRef === undefined ? {} : { shopRef: asShopId(args.shopRef) }),
         ...(args.query === undefined ? {} : { query: args.query }),
       })
       return { items: items.slice(0, limit).map(projectLink) }
     },
-    presentCall: args => ({ card: 'generic', title: `查询链接资产${args.query === undefined ? '' : `「${args.query}」`}` }),
+    presentCall: args => ({ card: 'generic', title: `查询商品条目${args.query === undefined ? '' : `「${args.query}」`}` }),
   }))
 }

@@ -28,8 +28,9 @@
       (验光配镜工作台). Your working directory is {{cwd}}. The workbench is served
       as a standalone browser app by this profile; its agent session surface,
       the 商品 Wiki module (rxlab catalog master data), and the 商品采集 module
-      (rxlab collect: platform/shop/product-link assets with deterministic link
-      captures into the rxlab_collect domain) are live, while rxlab's
+      (rxlab collect: registered 平台/店铺 and the 商品 entries filed under them,
+      typed in by hand and filled in from agent drafts the person confirms) are
+      live, while rxlab's
       other business modules (验光配镜、推荐校验、效果图) are not
       connected yet. If asked to operate the unconnected modules, say they are
       not available instead of inventing tools or steps.
@@ -245,11 +246,14 @@
       name: '@deepseek-ai/dsh-rxlab-catalog'
 
     # Owns the `rxlabCollect` Remote namespace over the `rxlab_collect` storage
-    # domain (link assets, capture history, run batches; records land under the
-    # storages-rxlab root above). Link runs use deterministic headless chromium
-    # collectors with a serial in-process queue, so the module captures without
-    # a model key. The package is also a dsh.client row, so the SPA's headless
-    # boot mounts the namespace from its own /client bundle.
+    # domain (registered shops, the product entries filed under them, and the
+    # agent's pending drafts; records land under the storages-rxlab root above).
+    # Hand entry is the source of truth: a person types every product field, and
+    # the shipped `collect` preset's agent only proposes drafts for them to
+    # confirm. Nothing is captured automatically, so the module needs no
+    # browser and no model key of its own. The package is also a dsh.client row,
+    # so the SPA's headless boot mounts the namespace from its own /client
+    # bundle.
     - id: rxlab-collect
       name: '@deepseek-ai/dsh-rxlab-collect'
 
@@ -297,27 +301,6 @@
     - id: rxlab-usage
       name: '@deepseek-ai/dsh-rxlab-usage'
       inject: [storageDomain, sessionProjections, rxlabPaths]
-
-    # Host-plane login-capable chromium (`ctx.collectBrowser`) behind the
-    # collect agent's browser-use tools: one instance and one login profile
-    # per host, so concurrent collect sessions share the profile instead of
-    # racing Playwright's per-directory process lock. `dsh rxlab --cdp` flips
-    # it from the owned persistent profile to attaching to a real browser over
-    # Chrome DevTools Protocol (endpoint defaults to http://127.0.0.1:9222 in
-    # the session service). The tools row that consumes it is per-session (the
-    # shipped `collect` preset).
-    - id: rxlab-collect-browser
-      name: '@deepseek-ai/dsh-rxlab-collect/browser'
-      inject: [rxlabStartup]
-      config:
-        launchMode: !!js "(ctx.rxlabStartup.cdp ? 'cdp' : 'persistent')"
-
-    # Spawns a CDP-mode chromium on demand (executable path/port/profile from
-    # the collect module settings, handed over by the browserLaunch RPC), so
-    # the SPA can open a real logged-in browser and run captures through it
-    # without relaunching the profile with `--cdp`.
-    - id: rxlab-collect-browser-launch
-      name: '@deepseek-ai/dsh-rxlab-collect/browser-launch'
 
     # The per-session agent preset roster (shipped presets bundled inside the
     # package as a read-only system root, locally authored presets under

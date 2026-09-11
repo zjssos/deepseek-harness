@@ -1,50 +1,43 @@
 /**
- * Host Collect Remote owner for the rxlab product collector: the
- * `rxlabCollect` namespace over the `rxlab_collect` storage domain (link
- * assets, capture history, run batches). Link runs are executed by the
- * deterministic platform collectors over a controller-owned headless
- * chromium; the whole run loop is token-free by design, so the module never
- * needs a model key. This package mounts its own namespace on the Client side
- * (see `src/client/index.ts`) and is a rxlab-app data row; it deliberately
- * never joins the platform `api-remotes` assembly.
+ * Host Collect Remote owner for the rxlab product collect module: the
+ * `rxlabCollect` namespace over the `rxlab_collect` storage domain — the
+ * shops a person registers, the product entries filed under them, and the
+ * drafts the collect agent proposes. Every product field is entered by hand or
+ * confirmed from a draft; the controller runs no collector and needs no model
+ * key. This package mounts its own namespace on the Client side (see
+ * `src/client/index.ts`) and is a rxlab-app data row; it deliberately never
+ * joins the platform `api-remotes` assembly.
  * @module @deepseek-ai/dsh-rxlab-collect
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { chromium, type Browser } from 'playwright'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { z } from 'zod'
 import {
-  collectBatchSchema,
-  collectCaptureSchema,
   collectDomainSpec,
-  collectLinkDraftSchema,
+  collectDraftPayloadSchema,
+  collectDraftSchema,
   collectLinkSchema,
+  collectProductDraftSchema,
+  collectShopDraftSchema,
+  collectShopSchema,
 } from './domain.ts'
-import { createCollectorRegistry } from './executor/index.ts'
 import {
-  csvToRecords, jdDesktopUrl, jdMobileUrl, jdSkuFromUrl, platformFromUrl, readableError,
-  taobaoIdFromUrl, taobaoItemUrl,
-} from './executor/parse.ts'
-import type { Collector, CollectorResult } from './executor/types.ts'
+  csvToRecords, jdDesktopUrl, jdSkuFromUrl, platformFromUrl, readableError, taobaoIdFromUrl, taobaoItemUrl,
+} from './parse.ts'
 import type {
-  CollectBatchCreateRequest,
-  CollectBatchCreateValue,
-  CollectBatchGetRequest,
-  CollectBatchGetValue,
-  CollectBatchId,
-  CollectBatchListRequest,
-  CollectBatchListValue,
-  CollectBatchSummary,
-  CollectCaptureId,
-  CollectCaptureListRequest,
-  CollectCaptureListValue,
-  CollectDiscoveredLink,
-  CollectDiscoveredSubmitValue,
+  CollectDraftCommitRequest,
+  CollectDraftCommitValue,
+  CollectDraftId,
+  CollectDraftListRequest,
+  CollectDraftListValue,
+  CollectDraftPayload,
+  CollectDraftRejectRequest,
+  CollectDraftRejectValue,
+  CollectDraftSubmission,
+  CollectDraftSubmitValue,
   CollectLink,
   CollectLinkGetRequest,
   CollectLinkGetValue,
@@ -58,41 +51,45 @@ import type {
   CollectLinkUpsertRequest,
   CollectLinkUpsertValue,
   CollectPlatform,
-  BrowserLaunchRequest,
-  BrowserLaunchValue,
-  BrowserStatusInfo,
-  BrowserStatusValue,
-  BrowserStopValue,
+  CollectShopGetRequest,
+  CollectShopGetValue,
+  CollectShopId,
+  CollectShopListRequest,
+  CollectShopListValue,
+  CollectShopRemoveRequest,
+  CollectShopRemoveValue,
+  CollectShopUpsertRequest,
+  CollectShopUpsertValue,
 } from './types.ts'
 
 export type * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Host business API and Remote namespace owner for the rxlab collector. */
+    /** Host business API and Remote namespace owner for the rxlab collect module. */
     collectController: CollectController
   }
 }
 
+type StoredShop = z.infer<typeof collectShopSchema>
 type StoredLink = z.infer<typeof collectLinkSchema>
-type StoredCapture = z.infer<typeof collectCaptureSchema>
-type StoredBatch = z.infer<typeof collectBatchSchema>
+type StoredDraft = z.infer<typeof collectDraftSchema>
 
 const PLATFORMS: readonly CollectPlatform[] = ['jd', 'taobao', '1688', 'manual']
 
-/** Brand one raw uuid as a link key. */
+/** Brand one raw uuid as a shop key. */
+function newShopId(): CollectShopId {
+  return randomUUID() as CollectShopId
+}
+
+/** Brand one raw uuid as a product entry key. */
 function newLinkId(): CollectLinkId {
   return randomUUID() as CollectLinkId
 }
 
-/** Brand one raw uuid as a capture key. */
-function newCaptureId(): CollectCaptureId {
-  return randomUUID() as CollectCaptureId
-}
-
-/** Brand one raw uuid as a batch key. */
-function newBatchId(): CollectBatchId {
-  return randomUUID() as CollectBatchId
+/** Brand one raw uuid as a draft key. */
+function newDraftId(): CollectDraftId {
+  return randomUUID() as CollectDraftId
 }
 
 /** Validate one wire value against a zod schema or throw the wire failure. */
@@ -110,6 +107,13 @@ function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, subject: string):
   throw new RemoteError('gateway/bad-request', `rxlab collect ${subject} failed validation${hint}`, { issues })
 }
 
+/** Compact one-line description of a zod failure, for a rejection receipt. */
+function formatIssues(error: z.ZodError): string {
+  return error.issues
+    .map(issue => `${issue.path.join('.') || 'row'}: ${issue.message}`)
+    .join('; ')
+}
+
 /** Platform for one CSV record: the column value (validated), else a host guess. */
 function platformOf(recordPlatform: string, url: string): CollectPlatform | undefined {
   if (recordPlatform !== '') {
@@ -118,18 +122,21 @@ function platformOf(recordPlatform: string, url: string): CollectPlatform | unde
   return platformFromUrl(url)
 }
 
-/** Effective (canonicalized) link fields for a validated draft. */
+/**
+ * Canonical address for one product draft: the platform's stable product URL
+ * when the entered url carries an id, so the same product entered twice
+ * merges. Platforms without a derivable id keep the entered url trimmed.
+ */
 function canonicalize(platform: CollectPlatform, url: string, sku: string | undefined): {
   url: string
-  mobileUrl?: string | undefined
   sku?: string | undefined
 } {
   if (platform === 'jd') {
     const derived = sku ?? jdSkuFromUrl(url)
     if (derived === null) {
-      throw new RemoteError('gateway/bad-request', 'JD 链接需要是 item.jd.com 商品详情页(含 sku)', {})
+      throw new RemoteError('gateway/bad-request', '京东链接需要是含 sku 的商品详情页(item.jd.com)', {})
     }
-    return { url: jdDesktopUrl(derived), mobileUrl: jdMobileUrl(derived), sku: derived }
+    return { url: jdDesktopUrl(derived), sku: derived }
   }
   if (platform === 'taobao') {
     const derived = sku ?? taobaoIdFromUrl(url)
@@ -143,20 +150,17 @@ function canonicalize(platform: CollectPlatform, url: string, sku: string | unde
 
 /**
  * Host service backing the generated `ctx.remote.rxlabCollect` namespace.
- * Link assets, captures, and batches live in the `rxlab_collect` domain;
+ * Shops, product entries, and drafts live in the `rxlab_collect` domain;
  * writes queue on the domain's write chain and emit `domain/changed` after
- * durability. Batches run serially in-process over the platform collectors
- * and update durable state only at each item's commit point.
+ * durability. Only a hand-entry call and an accepted draft write records;
+ * a pending draft never reaches the shop or product tables.
  */
 export class CollectController extends TypertRemoteService {
-  static inject = ['storageDomain', 'settings']
+  static inject = ['storageDomain']
 
+  private shops?: KvTable<CollectShopId, StoredShop>
   private links?: KvTable<CollectLinkId, StoredLink>
-  private captures?: KvTable<CollectCaptureId, StoredCapture>
-  private batches?: KvTable<CollectBatchId, StoredBatch>
-  private registry = new Map<CollectPlatform, Collector>()
-  private browserPromise: Promise<Browser> | undefined
-  private tail: Promise<void> = Promise.resolve()
+  private drafts?: KvTable<CollectDraftId, StoredDraft>
 
   /**
    * Register the collect namespace on the Typert Gateway.
@@ -166,103 +170,20 @@ export class CollectController extends TypertRemoteService {
     super(ctx, 'collectController', { namespace: 'rxlabCollect' })
   }
 
-  /** Open the collect domain and arm the browser/registry for its lifetime. */
+  /** Open the collect domain for the controller's lifetime. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(collectDomainSpec)
     this.ctx.effect(() => () => domain.close(), 'rxlab_collect.domainClose')
+    this.shops = domain.table('shops')
     this.links = domain.table('links')
-    this.captures = domain.table('captures')
-    this.batches = domain.table('batches')
-    this.registry = createCollectorRegistry(() => this.getBrowser(), () => this.captureContext())
-    this.ctx.effect(() => () => {
-      const pending = this.browserPromise
-      if (pending !== undefined) void pending.then(browser => browser.close()).catch(() => undefined)
-    }, 'rxlab_collect.browserClose')
+    this.drafts = domain.table('drafts')
   }
 
-  private async getBrowser(): Promise<Browser> {
-    if (this.browserPromise !== undefined) {
-      const existing = await this.browserPromise.catch(() => undefined)
-      if (existing !== undefined && existing.isConnected()) return existing
-      // The shared browser died (closed/crashed/stopped between items); relaunch
-      // so the rest of the batch does not fail on a dead handle.
-      this.browserPromise = undefined
+  private requireShops(): KvTable<CollectShopId, StoredShop> {
+    if (this.shops === undefined) {
+      throw new RemoteError('gateway/internal', 'rxlab collect domain is not open; the storage-domain row must be active before the collect row', {})
     }
-    const created = this.launchChromium()
-    this.browserPromise = created
-    created.catch(() => { if (this.browserPromise === created) this.browserPromise = undefined })
-    return created
-  }
-
-  /**
-   * The capture context mode collectors should use right now: `default` when
-   * attaching to a real CDP browser (login cookies apply, pages open as tabs
-   * in the existing window), `isolated` for the anonymous headless chromium.
-   */
-  private captureContext(): 'isolated' | 'default' {
-    try {
-      const value = this.ctx.settings.get('rxlab-collect-browser') as { launchMode?: string } | undefined
-      if (value?.launchMode === 'cdp') return 'default'
-    } catch {
-      // Settings unavailable: fall back to the anonymous isolated context.
-    }
-    return 'isolated'
-  }
-
-  /** Launch headless chromium, or attach to a CDP browser when the namespace is in cdp mode. */
-  private async launchChromium(): Promise<Browser> {
-    let browserSettings: { launchMode?: string; cdpEndpoint?: string; executablePath?: string } | undefined
-    try {
-      browserSettings = this.ctx.settings.get('rxlab-collect-browser') as
-        | { launchMode?: string; cdpEndpoint?: string; executablePath?: string }
-        | undefined
-    } catch {
-      browserSettings = undefined
-    }
-    // Capture stays on its own anonymous headless chromium (no window) unless
-    // the person explicitly set cdp mode. In cdp mode the collector attaches
-    // to the real browser; when none is running it launches one from the
-    // settings (executable path) through the launcher row and retries once, so
-    // a capture never dies just because the browser was not opened first.
-    if (browserSettings?.launchMode === 'cdp') {
-      const endpoint = browserSettings.cdpEndpoint ?? 'http://127.0.0.1:9222'
-      const attach = async (): Promise<Browser> => chromium.connectOverCDP(endpoint)
-      try {
-        return await attach()
-      } catch (cause) {
-        const first = cause instanceof Error ? cause.message : String(cause)
-        const launcher = this.ctx.get('collectCdpLauncher') as
-          | { launch(opts: { executablePath?: string; port?: number; headless?: boolean }): Promise<{ launched: boolean; detail: string }> }
-          | undefined
-        if (launcher !== undefined) {
-          const executablePath = browserSettings?.executablePath?.trim()
-          const parsedPort = Number(new URL(endpoint).port)
-          const outcome = await launcher.launch({
-            ...executablePath === undefined || executablePath === '' ? {} : { executablePath },
-            port: Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 9222,
-          })
-          if (outcome.launched) {
-            try {
-              return await attach()
-            } catch (second) {
-              throw new Error(`CDP 捕获浏览器已拉起但连接仍失败:${endpoint} (${second instanceof Error ? second.message : String(second)})`)
-            }
-          }
-          throw new Error(`CDP 捕获浏览器启动失败:${outcome.detail}`)
-        }
-        throw new Error(
-          `CDP 捕获浏览器未就绪:${endpoint} 无响应(${first})。请在采集模块设置里填写浏览器可执行文件路径并把浏览器模式设为 CDP,再运行采集批次(采集会自动拉起该浏览器)。`,
-        )
-      }
-    }
-    try {
-      return await chromium.launch({ headless: true })
-    } catch (cause) {
-      const missing = cause instanceof Error && /Executable doesn't exist/.test(cause.message)
-      const executable = missing ? cachedChromiumExecutable() : undefined
-      if (executable === undefined) throw cause
-      return chromium.launch({ headless: true, executablePath: executable })
-    }
+    return this.shops
   }
 
   private requireLinks(): KvTable<CollectLinkId, StoredLink> {
@@ -272,36 +193,101 @@ export class CollectController extends TypertRemoteService {
     return this.links
   }
 
-  private requireCaptures(): KvTable<CollectCaptureId, StoredCapture> {
-    if (this.captures === undefined) {
+  private requireDrafts(): KvTable<CollectDraftId, StoredDraft> {
+    if (this.drafts === undefined) {
       throw new RemoteError('gateway/internal', 'rxlab collect domain is not open; the storage-domain row must be active before the collect row', {})
     }
-    return this.captures
-  }
-
-  private requireBatches(): KvTable<CollectBatchId, StoredBatch> {
-    if (this.batches === undefined) {
-      throw new RemoteError('gateway/internal', 'rxlab collect domain is not open; the storage-domain row must be active before the collect row', {})
-    }
-    return this.batches
+    return this.drafts
   }
 
   /**
-   * List link assets, newest write first, with platform/shop/status filters
-   * and a case-insensitive shop/sku/url substring match.
+   * List registered shops, newest write first, with a platform filter and a
+   * case-insensitive name/key/home-url substring match.
    * @param request - filters; absent fields match everything.
-   * @returns matching links in list order.
+   * @returns matching shops in list order.
+   */
+  @Remote('listShops')
+  // oxlint-disable-next-line typescript/require-await -- synchronous memory reads keep the Remote surface's async signature
+  async listShops(request: CollectShopListRequest): Promise<CollectShopListValue> {
+    const query = request.query?.trim().toLocaleLowerCase()
+    const rows = [...this.requireShops().entries()]
+      .filter(([, shop]) =>
+        (request.platform === undefined || shop.platform === request.platform)
+        && (query === undefined || query.length === 0 || matchesShopQuery(shop, query)))
+    rows.sort(([, left], [, right]) =>
+      right.updatedAt.localeCompare(left.updatedAt)
+      || String(left.id).localeCompare(String(right.id)))
+    return { shops: rows.map(([, shop]) => shop) }
+  }
+
+  /**
+   * Read one registered shop.
+   * @param request - target shop identity.
+   * @returns the full stored shop.
+   * @throws RemoteError `collect/shop-not-found` when no shop carries the id.
+   */
+  @Remote('getShop')
+  // oxlint-disable-next-line typescript/require-await -- synchronous memory reads keep the Remote surface's async signature
+  async getShop(request: CollectShopGetRequest): Promise<CollectShopGetValue> {
+    const shop = this.requireShops().get(request.id)
+    if (shop === undefined) {
+      throw new RemoteError('collect/shop-not-found', `rxlab collect has no shop '${String(request.id)}'`, {
+        id: request.id,
+      })
+    }
+    return { shop }
+  }
+
+  /**
+   * Register or replace one shop. Shops are not de-duplicated: a present id
+   * replaces that row, an absent id always mints a new one.
+   * @param request - full draft for the new or replaced shop.
+   * @returns the stored shop.
+   * @throws RemoteError `gateway/bad-request` when the draft fails its zod schema.
+   */
+  @Remote('upsertShop')
+  async upsertShop(request: CollectShopUpsertRequest): Promise<CollectShopUpsertValue> {
+    const draft = parseOrThrow(collectShopDraftSchema, request.shop, 'shop draft')
+    return { shop: await this.upsertShopOne(draft) }
+  }
+
+  /**
+   * Remove one shop. Its product entries are never deleted: each one loses
+   * its shop link and returns to the unfiled list.
+   * @param request - target shop identity.
+   * @returns whether a shop existed under the id, and how many entries were unfiled.
+   */
+  @Remote('removeShop')
+  async removeShop(request: CollectShopRemoveRequest): Promise<CollectShopRemoveValue> {
+    const removed = await this.requireShops().delete(request.id)
+    if (!removed) return { removed: false, unfiled: 0 }
+    const links = this.requireLinks()
+    const now = new Date().toISOString()
+    let unfiled = 0
+    for (const [id, link] of links.entries()) {
+      if (link.shopRef !== request.id) continue
+      await links.put(id, parseOrThrow(collectLinkSchema, { ...link, shopRef: undefined, updatedAt: now }, 'link'))
+      unfiled += 1
+    }
+    return { removed: true, unfiled }
+  }
+
+  /**
+   * List product entries, newest write first, with platform/shop/unfiled
+   * filters and a case-insensitive title/sku/shop/url substring match.
+   * @param request - filters; absent fields match everything.
+   * @returns matching entries in list order.
    */
   @Remote('listLinks')
+  // oxlint-disable-next-line typescript/require-await -- synchronous memory reads keep the Remote surface's async signature
   async listLinks(request: CollectLinkListRequest): Promise<CollectLinkListValue> {
-    const table = this.requireLinks()
     const query = request.query?.trim().toLocaleLowerCase()
-    const rows = [...table.entries()]
+    const rows = [...this.requireLinks().entries()]
       .filter(([, link]) =>
         (request.platform === undefined || link.platform === request.platform)
-        && (request.shopId === undefined || link.shopId === request.shopId)
-        && (request.status === undefined || link.status === request.status)
-        && (query === undefined || query.length === 0 || matchesQuery(link, query)))
+        && (request.shopRef === undefined || link.shopRef === request.shopRef)
+        && (request.unfiled !== true || link.shopRef === undefined)
+        && (query === undefined || query.length === 0 || matchesLinkQuery(link, query)))
     rows.sort(([, left], [, right]) =>
       right.updatedAt.localeCompare(left.updatedAt)
       || String(left.id).localeCompare(String(right.id)))
@@ -309,12 +295,13 @@ export class CollectController extends TypertRemoteService {
   }
 
   /**
-   * Read one complete link asset.
-   * @param request - target link identity.
-   * @returns the full stored link.
-   * @throws RemoteError `collect/link-not-found` when no link carries the id.
+   * Read one complete product entry.
+   * @param request - target entry identity.
+   * @returns the full stored entry.
+   * @throws RemoteError `collect/link-not-found` when no entry carries the id.
    */
   @Remote('getLink')
+  // oxlint-disable-next-line typescript/require-await -- synchronous memory reads keep the Remote surface's async signature
   async getLink(request: CollectLinkGetRequest): Promise<CollectLinkGetValue> {
     const link = this.requireLinks().get(request.id)
     if (link === undefined) {
@@ -326,24 +313,25 @@ export class CollectController extends TypertRemoteService {
   }
 
   /**
-   * Create or replace one link asset. A present id replaces that row; an
-   * absent id mints a row unless another link already holds the same
+   * Create or replace one product entry. A present id replaces that row; an
+   * absent id mints a row unless another entry already holds the same
    * platform+canonical-url, which merges into that row instead.
-   * @param request - full draft for the new or replaced link.
-   * @returns the stored link and whether it merged into an existing row.
+   * @param request - full draft for the new or replaced entry.
+   * @returns the stored entry and whether it merged into an existing row.
    * @throws RemoteError `gateway/bad-request` when the draft fails its zod
-   * schema or a JD url carries no sku.
+   * schema or a JD/Taobao url carries no id.
+   * @throws RemoteError `collect/shop-not-found` when the draft names an unknown shop.
    */
   @Remote('upsertLink')
   async upsertLink(request: CollectLinkUpsertRequest): Promise<CollectLinkUpsertValue> {
-    const draft = parseOrThrow(collectLinkDraftSchema, request.link, 'link draft')
-    const stored = await this.upsertOne(draft)
+    const draft = parseOrThrow(collectProductDraftSchema, request.link, 'link draft')
+    const stored = await this.upsertLinkOne(draft)
     return { link: stored.link, merged: stored.merged }
   }
 
   /**
-   * Remove one link asset; its capture history stays.
-   * @param request - target link identity.
+   * Remove one product entry.
+   * @param request - target entry identity.
    * @returns whether a row existed under the id (false never writes).
    */
   @Remote('removeLink')
@@ -352,14 +340,16 @@ export class CollectController extends TypertRemoteService {
   }
 
   /**
-   * Bulk-create links from CSV text (header: platform,url + optional
-   * shopId/shopName/sku/title). Rows are validated independently; invalid
-   * rows come back as rejections while valid rows upsert as usual.
-   * @param request - the raw CSV text blob.
-   * @returns created/merged links and row-level rejections.
+   * Bulk-create product entries from CSV text (header: url + optional
+   * platform/sku/title). Rows are validated independently; invalid rows come
+   * back as rejections while valid rows upsert as usual.
+   * @param request - the raw CSV text blob and the shop the rows are filed under.
+   * @returns created/merged entries and row-level rejections.
+   * @throws RemoteError `collect/shop-not-found` when the request names an unknown shop.
    */
   @Remote('importLinks')
   async importLinks(request: CollectLinkImportRequest): Promise<CollectLinkImportValue> {
+    if (request.shopRef !== undefined) this.requireShopRef(request.shopRef)
     const { records, errors } = csvToRecords(request.text)
     const created: CollectLink[] = []
     const updated: CollectLink[] = []
@@ -371,26 +361,19 @@ export class CollectController extends TypertRemoteService {
         rejected.push({ row, reason: `无法推断平台: ${record.platform || record.url}` })
         continue
       }
-      const parsed = collectLinkDraftSchema.safeParse({
+      const parsed = collectProductDraftSchema.safeParse({
         platform,
         url: record.url,
-        ...(record.shopId === undefined ? {} : { shopId: record.shopId }),
-        ...(record.shopName === undefined ? {} : { shopName: record.shopName }),
         ...(record.sku === undefined ? {} : { sku: record.sku }),
-        ...(record.titleAtAdd === undefined ? {} : { titleAtAdd: record.titleAtAdd }),
+        ...(record.title === undefined ? {} : { title: record.title }),
+        ...(request.shopRef === undefined ? {} : { shopRef: request.shopRef }),
       })
       if (!parsed.success) {
-        rejected.push({
-          row,
-          reason: parsed.error.issues
-            .map(issue => `${issue.path.join('.') || 'row'}: ${issue.message}`)
-            .join('; ')
-            .slice(0, 400),
-        })
+        rejected.push({ row, reason: formatIssues(parsed.error).slice(0, 400) })
         continue
       }
       try {
-        const stored = await this.upsertOne(parsed.data)
+        const stored = await this.upsertLinkOne(parsed.data)
         ;(stored.merged ? updated : created).push(stored.link)
       } catch (cause) {
         rejected.push({ row, reason: readableError(cause).slice(0, 400) })
@@ -400,171 +383,151 @@ export class CollectController extends TypertRemoteService {
   }
 
   /**
-   * Submit links the collect agent discovered by browsing (browser use):
-   * every entry is validated independently like CSV import, the platform is
-   * guessed from the url when absent, and accepted entries upsert with the
-   * usual platform+canonical-url merge. Host-internal: the agent tools call
-   * this directly; it registers no Remote method.
-   * @param links - discovered link drafts in submission order.
-   * @returns created/merged links and per-entry rejections.
+   * List drafts, newest first.
+   * @param request - optional status and target filters.
+   * @returns draft rows in list order.
    */
-  async submitDiscovered(links: readonly CollectDiscoveredLink[]): Promise<CollectDiscoveredSubmitValue> {
-    const created: CollectLink[] = []
-    const merged: CollectLink[] = []
-    const rejected: { link: CollectDiscoveredLink; reason: string }[] = []
-    for (const link of links) {
-      const platform = link.platform ?? platformFromUrl(link.url)
-      if (platform === undefined) {
-        rejected.push({ link, reason: `无法推断平台: ${link.url}` })
-        continue
-      }
-      const parsed = collectLinkDraftSchema.safeParse({
-        ...link,
-        platform,
-      })
-      if (!parsed.success) {
-        rejected.push({
-          link,
-          reason: parsed.error.issues
-            .map(issue => `${issue.path.join('.') || 'link'}: ${issue.message}`)
-            .join('; ')
-            .slice(0, 400),
-        })
-        continue
-      }
-      try {
-        const stored = await this.upsertOne(parsed.data)
-        ;(stored.merged ? merged : created).push(stored.link)
-      } catch (cause) {
-        rejected.push({ link, reason: readableError(cause).slice(0, 400) })
-      }
-    }
-    return { created, merged, rejected }
-  }
-
-  /**
-   * Create a run batch over the given links and start its serial queue. The
-   * returned batch is the queued snapshot; progress lands on the same record
-   * as items commit, so the UI polls `getBatch`.
-   * @param request - link ids to capture, in run order.
-   * @returns the queued batch.
-   * @throws RemoteError `collect/link-not-found` when any id is unknown.
-   */
-  @Remote('createBatch')
-  async createBatch(request: CollectBatchCreateRequest): Promise<CollectBatchCreateValue> {
-    const table = this.requireLinks()
-    const linkIds = [...new Set(request.linkIds)]
-    if (linkIds.length === 0) {
-      throw new RemoteError('gateway/bad-request', 'batch needs at least one link id', {})
-    }
-    for (const id of linkIds) {
-      if (table.get(id) === undefined) {
-        throw new RemoteError('collect/link-not-found', `rxlab collect has no link '${String(id)}'`, { id })
-      }
-    }
-    const now = new Date().toISOString()
-    const id = newBatchId()
-    const batch = parseOrThrow(collectBatchSchema, {
-      id,
-      createdAt: now,
-      updatedAt: now,
-      status: 'queued',
-      counts: { total: linkIds.length, ok: 0, error: 0 },
-      items: linkIds.map(linkId => ({ linkId, status: 'pending' as const })),
-    }, 'batch')
-    await this.requireBatches().put(id, batch)
-    this.tail = this.tail.then(() => this.runBatch(id)).catch(() => undefined)
-    return { batch }
-  }
-
-  /**
-   * List run batches, newest write first, counts only.
-   * @param request - optional status filter.
-   * @returns batch summaries in list order.
-   */
-  @Remote('listBatches')
-  async listBatches(request: CollectBatchListRequest): Promise<CollectBatchListValue> {
-    const rows = [...this.requireBatches().entries()]
-      .filter(([, batch]) => request.status === undefined || batch.status === request.status)
+  @Remote('listDrafts')
+  // oxlint-disable-next-line typescript/require-await -- synchronous memory reads keep the Remote surface's async signature
+  async listDrafts(request: CollectDraftListRequest): Promise<CollectDraftListValue> {
+    const rows = [...this.requireDrafts().entries()]
+      .filter(([, draft]) =>
+        (request.status === undefined || draft.status === request.status)
+        && (request.target === undefined || draft.payload.target === request.target))
     rows.sort(([, left], [, right]) =>
-      right.updatedAt.localeCompare(left.updatedAt)
+      right.createdAt.localeCompare(left.createdAt)
       || String(left.id).localeCompare(String(right.id)))
-    return { batches: rows.map(([, batch]) => summarizeBatch(batch)) }
+    return { drafts: rows.map(([, draft]) => draft) }
   }
 
   /**
-   * Open one full run batch (with per-link items).
-   * @param request - target batch identity.
-   * @returns the full stored batch.
-   * @throws RemoteError `collect/batch-not-found` when no batch carries the id.
+   * Accept one pending draft, writing the shop or product entry it proposes
+   * and marking the draft accepted in the same call.
+   * @param request - target draft identity and an optional owning shop override.
+   * @returns the accepted draft plus the record it produced.
+   * @throws RemoteError `collect/draft-not-found` when no draft carries the id.
+   * @throws RemoteError `collect/draft-not-pending` when the draft is already resolved.
+   * @throws RemoteError `collect/shop-not-found` when the entry names an unknown shop.
    */
-  @Remote('getBatch')
-  async getBatch(request: CollectBatchGetRequest): Promise<CollectBatchGetValue> {
-    const batch = this.requireBatches().get(request.id)
-    if (batch === undefined) {
-      throw new RemoteError('collect/batch-not-found', `rxlab collect has no batch '${String(request.id)}'`, {
+  @Remote('commitDraft')
+  async commitDraft(request: CollectDraftCommitRequest): Promise<CollectDraftCommitValue> {
+    const table = this.requireDrafts()
+    const draft = table.get(request.id)
+    if (draft === undefined) {
+      throw new RemoteError('collect/draft-not-found', `rxlab collect has no draft '${String(request.id)}'`, {
         id: request.id,
       })
     }
-    return { batch }
-  }
-
-  /**
-   * List capture history of one link, newest first.
-   * @param request - target link and optional row cap.
-   * @returns capture records in reverse-chronological order.
-   */
-  @Remote('listCaptures')
-  async listCaptures(request: CollectCaptureListRequest): Promise<CollectCaptureListValue> {
-    const limit = Math.min(Math.max(request.limit ?? 50, 1), 200)
-    const rows = [...this.requireCaptures().entries()]
-      .filter(([, capture]) => capture.linkId === request.linkId)
-    rows.sort(([, left], [, right]) => right.capturedAt.localeCompare(left.capturedAt))
-    return { captures: rows.slice(0, limit).map(([, capture]) => capture) }
-  }
-
-  /**
-   * Readable browser + launcher state for the SPA CDP status row.
-   * @returns the collect browse session state and launcher process state, each null when its row is not composed.
-   */
-  @Remote('browserStatus')
-  async browserStatus(): Promise<BrowserStatusValue> {
-    const session = this.ctx.get('collectBrowser') as { status(): Promise<BrowserStatusInfo> } | undefined
-    const launcher = this.ctx.get('collectCdpLauncher') as { status(): Promise<{ running: boolean; endpointUp: boolean }> } | undefined
+    if (draft.status !== 'pending') {
+      throw new RemoteError('collect/draft-not-pending', `draft '${String(request.id)}' is already ${draft.status}`, {
+        id: request.id,
+        status: draft.status,
+      })
+    }
+    const now = new Date().toISOString()
+    let shop: StoredShop | undefined
+    let link: StoredLink | undefined
+    if (draft.payload.target === 'shop') {
+      shop = await this.upsertShopOne(parseOrThrow(collectShopDraftSchema, draft.payload, 'shop draft'))
+    } else {
+      const productDraft = parseOrThrow(collectProductDraftSchema, draft.payload, 'link draft')
+      link = (await this.upsertLinkOne({
+        ...productDraft,
+        ...(request.shopRef === undefined ? {} : { shopRef: request.shopRef }),
+      })).link
+    }
+    const resolved = parseOrThrow(collectDraftSchema, {
+      ...draft,
+      status: 'accepted',
+      resolvedAt: now,
+      resolvedId: String(shop?.id ?? link?.id ?? ''),
+    }, 'draft')
+    await table.put(draft.id, resolved)
     return {
-      browser: session === undefined ? null : await session.status(),
-      launcher: launcher === undefined ? null : await launcher.status(),
+      draft: resolved,
+      ...(shop === undefined ? {} : { shop }),
+      ...(link === undefined ? {} : { link }),
     }
   }
 
   /**
-   * Spawn a CDP-mode browser for the capture flow.
-   * @param request - executable path/port/profile overrides for this launch.
-   * @returns whether the endpoint came up after the launch wait, with a readable detail line.
-   * @throws RemoteError `gateway/internal` when the launcher row is not composed.
+   * Reject one pending draft; nothing is written to the shop or product tables.
+   * @param request - target draft identity.
+   * @returns the rejected draft.
+   * @throws RemoteError `collect/draft-not-found` when no draft carries the id.
+   * @throws RemoteError `collect/draft-not-pending` when the draft is already resolved.
    */
-  @Remote('browserLaunch')
-  async browserLaunch(request: BrowserLaunchRequest): Promise<BrowserLaunchValue> {
-    const launcher = this.ctx.get('collectCdpLauncher') as { launch(opts: BrowserLaunchRequest): Promise<BrowserLaunchValue> } | undefined
-    if (launcher === undefined) {
-      throw new RemoteError('gateway/internal', 'rxlab collect CDP 启动行未装配', {})
+  @Remote('rejectDraft')
+  async rejectDraft(request: CollectDraftRejectRequest): Promise<CollectDraftRejectValue> {
+    const table = this.requireDrafts()
+    const draft = table.get(request.id)
+    if (draft === undefined) {
+      throw new RemoteError('collect/draft-not-found', `rxlab collect has no draft '${String(request.id)}'`, {
+        id: request.id,
+      })
     }
-    return launcher.launch(request)
+    if (draft.status !== 'pending') {
+      throw new RemoteError('collect/draft-not-pending', `draft '${String(request.id)}' is already ${draft.status}`, {
+        id: request.id,
+        status: draft.status,
+      })
+    }
+    const resolved = parseOrThrow(collectDraftSchema, {
+      ...draft,
+      status: 'rejected',
+      resolvedAt: new Date().toISOString(),
+    }, 'draft')
+    await table.put(draft.id, resolved)
+    return { draft: resolved }
   }
 
   /**
-   * Stop the launcher-owned CDP browser (an externally started browser is untouched).
-   * @returns whether a process this row spawned was stopped.
+   * Record drafts the collect agent proposed from material a person handed
+   * it. Every entry is validated independently and stored as pending; nothing
+   * reaches the shop or product tables until a person accepts it. Host-internal:
+   * the agent tools call this directly; it registers no Remote method.
+   * @param entries - proposed payloads with the material each came from.
+   * @returns created drafts and per-entry rejections.
    */
-  @Remote('browserStop')
-  async browserStop(): Promise<BrowserStopValue> {
-    const launcher = this.ctx.get('collectCdpLauncher') as { stop(): Promise<boolean> } | undefined
-    return { stopped: launcher === undefined ? false : await launcher.stop() }
+  async submitDrafts(entries: readonly CollectDraftSubmission[]): Promise<CollectDraftSubmitValue> {
+    const created: StoredDraft[] = []
+    const rejected: { payload: CollectDraftPayload; reason: string }[] = []
+    for (const entry of entries) {
+      const parsed = collectDraftPayloadSchema.safeParse(entry.payload)
+      if (!parsed.success) {
+        rejected.push({ payload: entry.payload, reason: formatIssues(parsed.error).slice(0, 400) })
+        continue
+      }
+      try {
+        created.push(await this.putDraft(parsed.data, entry.sourceText))
+      } catch (cause) {
+        rejected.push({ payload: entry.payload, reason: readableError(cause).slice(0, 400) })
+      }
+    }
+    return { created, rejected }
   }
 
-  /** Shared single-link upsert used by `upsertLink` and `importLinks`. */
-  private async upsertOne(draft: z.infer<typeof collectLinkDraftSchema>): Promise<{ link: StoredLink; merged: boolean }> {
+  /** Shared single-shop upsert used by `upsertShop` and an accepted shop draft. */
+  private async upsertShopOne(draft: z.infer<typeof collectShopDraftSchema>): Promise<StoredShop> {
+    const table = this.requireShops()
+    const id = draft.id ?? newShopId()
+    const stored = parseOrThrow(collectShopSchema, {
+      id,
+      updatedAt: new Date().toISOString(),
+      platform: draft.platform,
+      name: draft.name,
+      ...(draft.shopKey === undefined ? {} : { shopKey: draft.shopKey }),
+      ...(draft.homeUrl === undefined ? {} : { homeUrl: draft.homeUrl }),
+      ...(draft.note === undefined ? {} : { note: draft.note }),
+    }, 'shop')
+    await table.put(id, stored)
+    return stored
+  }
+
+  /** Shared single-entry upsert used by `upsertLink`, `importLinks`, and an accepted draft. */
+  private async upsertLinkOne(draft: z.infer<typeof collectProductDraftSchema>): Promise<{ link: StoredLink; merged: boolean }> {
     const table = this.requireLinks()
+    if (draft.shopRef !== undefined) this.requireShopRef(draft.shopRef)
     const canonical = canonicalize(draft.platform, draft.url, draft.sku)
     let existing: StoredLink | undefined
     let merged = false
@@ -586,149 +549,75 @@ export class CollectController extends TypertRemoteService {
       updatedAt: new Date().toISOString(),
       platform: draft.platform,
       url: canonical.url,
-      ...(canonical.mobileUrl === undefined ? {} : { mobileUrl: canonical.mobileUrl }),
-      ...(draft.shopId === undefined ? {} : { shopId: draft.shopId }),
-      ...(draft.shopName === undefined ? {} : { shopName: draft.shopName }),
       ...(canonical.sku === undefined ? {} : { sku: canonical.sku }),
-      ...(draft.titleAtAdd === undefined ? {} : { titleAtAdd: draft.titleAtAdd }),
-      ...(draft.rescan === undefined ? {} : { rescan: draft.rescan }),
-      status: existing?.status ?? 'idle',
-      ...(existing?.lastCaptureAt === undefined ? {} : { lastCaptureAt: existing.lastCaptureAt }),
-      ...(existing?.lastCaptureId === undefined ? {} : { lastCaptureId: existing.lastCaptureId }),
-      ...(existing?.lastPrice === undefined ? {} : { lastPrice: existing.lastPrice }),
-      ...(existing?.lastError === undefined ? {} : { lastError: existing.lastError }),
+      ...(draft.shopRef === undefined ? {} : { shopRef: draft.shopRef }),
+      ...(draft.title === undefined ? {} : { title: draft.title }),
+      ...(draft.price === undefined ? {} : { price: draft.price }),
+      ...(draft.selectedSku === undefined ? {} : { selectedSku: draft.selectedSku }),
+      ...(draft.params === undefined ? {} : { params: draft.params }),
+      ...(draft.mainImageUrl === undefined ? {} : { mainImageUrl: draft.mainImageUrl }),
+      ...(draft.buyUrl === undefined ? {} : { buyUrl: draft.buyUrl }),
+      ...(draft.note === undefined ? {} : { note: draft.note }),
+      ...legacyFields(existing),
     }, 'link')
     await table.put(id, stored)
     return { link: stored, merged }
   }
 
-  /** Run one batch serially, committing each item at its own commit point. */
-  private async runBatch(id: CollectBatchId): Promise<void> {
-    const links = this.requireLinks()
-    const captures = this.requireCaptures()
-    let batch = this.requireBatches().get(id)
-    if (batch === undefined || batch.status === 'done' || batch.status === 'partial') return
-    batch = await this.patchBatch(id, { ...batch, status: 'running', updatedAt: new Date().toISOString() })
-    for (const [index, item] of batch.items.entries()) {
-      if (item.status !== 'pending') continue
-      const link = links.get(item.linkId)
-      if (link === undefined) {
-        batch = await this.commitItem(id, batch, index, { status: 'error', error: '链接不存在(可能已删除)' })
-        continue
-      }
-      await links.put(link.id, { ...link, status: 'running', updatedAt: new Date().toISOString() })
-      try {
-        const collector = this.registry.get(link.platform)
-        if (collector === undefined) {
-          throw new RemoteError('collect/adapter-unavailable', `平台 ${link.platform} 暂无采集适配器`, { platform: link.platform })
-        }
-        const result: CollectorResult = await collector.collect({
-          platform: link.platform,
-          url: link.url,
-          ...(link.mobileUrl === undefined ? {} : { mobileUrl: link.mobileUrl }),
-          ...(link.sku === undefined ? {} : { sku: link.sku }),
-        })
-        const captureId = newCaptureId()
-        const now = new Date().toISOString()
-        const capture = parseOrThrow(collectCaptureSchema, {
-          id: captureId,
-          linkId: link.id,
-          capturedAt: now,
-          fields: result.fields,
-          httpOk: result.httpOk,
-        }, 'capture')
-        await captures.put(captureId, capture)
-        await links.put(link.id, {
-          ...link,
-          status: 'ok',
-          lastCaptureAt: now,
-          lastCaptureId: captureId,
-          lastPrice: result.fields.price?.value,
-          lastError: undefined,
-          updatedAt: now,
-        })
-        batch = await this.commitItem(id, batch, index, { status: 'ok', captureId })
-      } catch (cause) {
-        const message = readableError(cause).slice(0, 2000)
-        const now = new Date().toISOString()
-        await links.put(link.id, { ...link, status: 'error', lastError: message, updatedAt: now })
-        batch = await this.commitItem(id, batch, index, { status: 'error', error: message })
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000))
+  /** Fail loud when a caller names a shop that is not registered. */
+  private requireShopRef(id: CollectShopId): void {
+    if (this.requireShops().get(id) === undefined) {
+      throw new RemoteError('collect/shop-not-found', `rxlab collect has no shop '${String(id)}'`, { id })
     }
   }
 
-  /**
-   * Persist one item outcome plus recomputed counts. The batch stays
-   * `running` while any item is still pending and settles to `done` (all ok)
-   * or `partial` (some failed) once every item committed.
-   */
-  private async commitItem(
-    id: CollectBatchId,
-    batch: StoredBatch,
-    index: number,
-    outcome: { status: 'ok' | 'error'; captureId?: CollectCaptureId; error?: string },
-  ): Promise<StoredBatch> {
-    const items = batch.items.map((item, itemIndex) => {
-      if (itemIndex !== index) return item
-      return {
-        ...item,
-        status: outcome.status,
-        ...(outcome.captureId === undefined ? {} : { captureId: outcome.captureId }),
-        ...(outcome.error === undefined ? {} : { error: outcome.error }),
-      }
-    })
-    const pending = items.filter(item => item.status === 'pending').length
-    const errorCount = items.filter(item => item.status === 'error').length
-    const status = pending > 0 ? 'running' : errorCount > 0 ? 'partial' : 'done'
-    return this.patchBatch(id, {
-      ...batch,
-      items,
-      counts: {
-        total: items.length,
-        ok: items.length - pending - errorCount,
-        error: errorCount,
-      },
-      status,
-      updatedAt: new Date().toISOString(),
-    })
-  }
-
-  /** Replace one batch row after validating it at the durable boundary. */
-  private async patchBatch(id: CollectBatchId, batch: StoredBatch): Promise<StoredBatch> {
-    const stored = parseOrThrow(collectBatchSchema, batch, 'batch')
-    await this.requireBatches().put(id, stored)
-    return stored
+  /** Store one pending draft; the id and createdAt are minted here. */
+  private async putDraft(payload: StoredDraft['payload'], sourceText: string | undefined): Promise<StoredDraft> {
+    const table = this.requireDrafts()
+    const id = newDraftId()
+    const trimmed = sourceText?.trim()
+    const draft = parseOrThrow(collectDraftSchema, {
+      id,
+      status: 'pending',
+      payload,
+      ...(trimmed === undefined || trimmed.length === 0 ? {} : { sourceText: trimmed }),
+      createdAt: new Date().toISOString(),
+    }, 'draft')
+    await table.put(id, draft)
+    return draft
   }
 }
 
-function matchesQuery(link: StoredLink, query: string): boolean {
-  const candidates = [link.shopName, link.sku, link.url, link.titleAtAdd]
+/**
+ * The legacy fields a stored entry keeps. Records written before the
+ * hand-entry model carry a platform-side shop id, a shop name text, and a
+ * title field named `titleAtAdd`; the controller preserves whatever it found
+ * so re-saving an old entry never destroys it.
+ */
+function legacyFields(existing: StoredLink | undefined): {
+  shopId?: string | undefined
+  shopName?: string | undefined
+  titleAtAdd?: string | undefined
+} {
+  return {
+    ...(existing?.shopId === undefined ? {} : { shopId: existing.shopId }),
+    ...(existing?.shopName === undefined ? {} : { shopName: existing.shopName }),
+    ...(existing?.titleAtAdd === undefined ? {} : { titleAtAdd: existing.titleAtAdd }),
+  }
+}
+
+/** Case-insensitive shop match over name, platform-side key, and home url. */
+function matchesShopQuery(shop: StoredShop, query: string): boolean {
+  const candidates = [shop.name, shop.shopKey, shop.homeUrl]
   return candidates.some(candidate =>
     candidate !== undefined && candidate.toLocaleLowerCase().includes(query))
 }
 
-/** Newest full chromium build in the shared playwright cache, when present. */
-function cachedChromiumExecutable(): string | undefined {
-  const root = join(process.env.LOCALAPPDATA ?? '', 'ms-playwright')
-  if (!existsSync(root)) return undefined
-  const dirs = readdirSync(root).filter(dir => dir.startsWith('chromium-')).sort()
-  for (const dir of dirs.reverse()) {
-    const candidate = join(root, dir, 'chrome-win', 'chrome.exe')
-    if (existsSync(candidate)) return candidate
-  }
-  return undefined
-}
-
-/** Project one stored batch onto its list-row summary. */
-function summarizeBatch(batch: StoredBatch): CollectBatchSummary {
-  return {
-    id: batch.id,
-    status: batch.status,
-    counts: batch.counts,
-    createdAt: batch.createdAt,
-    updatedAt: batch.updatedAt,
-  }
+/** Case-insensitive entry match over title, sku, legacy shop text, and url. */
+function matchesLinkQuery(link: StoredLink, query: string): boolean {
+  const candidates = [link.title, link.titleAtAdd, link.sku, link.shopName, link.url]
+  return candidates.some(candidate =>
+    candidate !== undefined && candidate.toLocaleLowerCase().includes(query))
 }
 
 export default CollectController

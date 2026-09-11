@@ -1,9 +1,9 @@
 /**
  * Collect data hooks for the collect panel: reads and writes over the
- * embedded client runtime's generated `remote.rxlabCollect` namespace (link
- * assets, run batches, capture history). Like the catalog hooks, these use
- * controlled refresh state — a nonce the panel bumps plus a light poll while
- * a batch is in flight — not a long subscription.
+ * embedded client runtime's generated `remote.rxlabCollect` namespace —
+ * registered shops, the product entries filed under them, and the agent's
+ * pending drafts. Like the catalog hooks, these use controlled refresh state
+ * (a nonce the panel bumps after a mutation) rather than a long subscription.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -11,25 +11,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // into the ClientRemote type shared with the rest of the workbench.
 import type {} from '@deepseek-ai/dsh-rxlab-collect/remote'
 import type {
-  CollectBatch,
-  CollectBatchId,
-  CollectBatchSummary,
-  CollectCapture,
+  CollectDraft,
+  CollectDraftId,
+  CollectDraftTarget,
   CollectLink,
   CollectLinkDraft,
   CollectLinkId,
   CollectPlatform,
-  CollectLinkStatus,
+  CollectShop,
+  CollectShopDraft,
+  CollectShopId,
+  CollectDraftStatus,
 } from '@deepseek-ai/dsh-rxlab-collect/types'
 import type { RxlabClientRuntime } from '@/rxlab/client'
-
-/** List filter the link browser holds. */
-export interface LinkListFilters {
-  readonly platform?: CollectPlatform
-  readonly shopId?: string
-  readonly status?: CollectLinkStatus
-  readonly query?: string
-}
 
 export type FetchPhase = 'loading' | 'ready' | 'error'
 
@@ -46,253 +40,195 @@ export interface ListController<T> {
 }
 
 /**
- * Fetch the link list whenever the runtime connects or a filter changes, and
- * expose a manual reload for post-mutation refresh.
- * @param runtime - ready client runtime; absent keeps the list empty.
- * @param connected - whether the browser transport generation is established.
- * @param filters - platform/shop/status/query; every change re-fetches.
- * @returns the last fetch snapshot and a reload trigger.
+ * Shared list-fetch body: re-fetches whenever the caller's key or the
+ * connection changes and exposes a manual reload for post-mutation refresh.
+ * Only a key change clears the rows; a reload keeps the previous rows visible
+ * until the fresh result lands, so the page never blanks mid-refresh.
  */
+function useList<T>(
+  runtime: RxlabClientRuntime | undefined,
+  connected: boolean,
+  key: string,
+  load: (runtime: RxlabClientRuntime) => Promise<readonly T[]>,
+): ListController<T> {
+  const [state, setState] = useState<FetchState<T>>({ phase: 'loading', items: [] })
+  const [nonce, setNonce] = useState(0)
+  const prevKey = useRef<string | null>(null)
+  const loadRef = useRef(load)
+  loadRef.current = load
+  const reload = useCallback(() => { setNonce(value => value + 1) }, [])
+
+  useEffect(() => {
+    if (runtime === undefined || !connected) return
+    const keyChanged = prevKey.current !== key
+    prevKey.current = key
+    let alive = true
+    if (keyChanged) setState({ phase: 'loading', items: [] })
+    void loadRef.current(runtime)
+      .then((items) => {
+        if (alive) setState({ phase: 'ready', items })
+      })
+      .catch((cause: unknown) => {
+        if (!alive) return
+        const message = cause instanceof Error ? cause.message : String(cause)
+        setState(prev => (prev.items.length > 0
+          ? { phase: 'ready', items: prev.items }
+          : { phase: 'error', items: [], error: message }))
+      })
+    return () => { alive = false }
+  }, [runtime, connected, key, nonce])
+
+  return { state, reload }
+}
+
+/** Readable failure text of one failed Remote call. */
+function failure(error: { readonly code: string; readonly message: string }): Error {
+  return new Error(`${error.code}: ${error.message}`)
+}
+
+/** Scope filter the shop tree holds. */
+export interface ShopListFilters {
+  readonly platform?: CollectPlatform
+  readonly query?: string
+}
+
+/** Fetch registered shops, newest write first. */
+export function useShopList(
+  runtime: RxlabClientRuntime | undefined,
+  connected: boolean,
+  filters: ShopListFilters,
+): ListController<CollectShop> {
+  const platformKey = filters.platform ?? ''
+  const queryKey = (filters.query ?? '').trim()
+  return useList<CollectShop>(
+    runtime,
+    connected,
+    [platformKey, queryKey].join('\u0000'),
+    async (client) => {
+      const result = await client.remote.rxlabCollect.listShops({
+        ...(filters.platform === undefined ? {} : { platform: filters.platform }),
+        ...(queryKey.length === 0 ? {} : { query: queryKey }),
+      })
+      if (!result.ok) throw failure(result.error)
+      return result.value.shops
+    },
+  )
+}
+
+/**
+ * List filter the product ledger holds. `unfiled` selects the entries that
+ * belong to no shop; `shopRef` selects one shop's entries.
+ */
+export interface LinkListFilters {
+  readonly platform?: CollectPlatform
+  readonly shopRef?: CollectShopId
+  readonly unfiled?: boolean
+  readonly query?: string
+}
+
+/** Fetch product entries, newest write first. */
 export function useLinkList(
   runtime: RxlabClientRuntime | undefined,
   connected: boolean,
   filters: LinkListFilters,
 ): ListController<CollectLink> {
-  const [state, setState] = useState<FetchState<CollectLink>>({ phase: 'loading', items: [] })
-  const [nonce, setNonce] = useState(0)
-  const prevKey = useRef<string | null>(null)
-  const reload = useCallback(() => { setNonce(value => value + 1) }, [])
-
   const platformKey = filters.platform ?? ''
-  const shopKey = filters.shopId ?? ''
-  const statusKey = filters.status ?? ''
+  const shopKey = filters.shopRef ?? ''
+  const unfiledKey = filters.unfiled === true ? 'unfiled' : ''
   const queryKey = (filters.query ?? '').trim()
-
-  useEffect(() => {
-    if (runtime === undefined || !connected) return
-    const key = [platformKey, shopKey, statusKey, queryKey].join('\u0000')
-    const keyChanged = prevKey.current !== key
-    prevKey.current = key
-    let alive = true
-    // Only the first load for a given query clears the list; polls and
-    // post-mutation reloads keep the previous rows until the fresh result
-    // lands, so the page never blanks or flashes mid-refresh.
-    if (keyChanged) setState({ phase: 'loading', items: [] })
-    void runtime.remote.rxlabCollect.listLinks({
-      ...(platformKey === '' ? {} : { platform: platformKey as CollectPlatform }),
-      ...(shopKey === '' ? {} : { shopId: shopKey }),
-      ...(statusKey === '' ? {} : { status: statusKey as CollectLinkStatus }),
-      ...(queryKey.length === 0 ? {} : { query: queryKey }),
-    })
-      .then((result) => {
-        if (!alive) return
-        if (!result.ok) {
-          setState(prev => (prev.items.length > 0
-            ? { phase: 'ready', items: prev.items }
-            : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
-          return
-        }
-        setState({ phase: 'ready', items: result.value.items })
+  return useList<CollectLink>(
+    runtime,
+    connected,
+    [platformKey, shopKey, unfiledKey, queryKey].join('\u0000'),
+    async (client) => {
+      const result = await client.remote.rxlabCollect.listLinks({
+        ...(filters.platform === undefined ? {} : { platform: filters.platform }),
+        ...(filters.shopRef === undefined ? {} : { shopRef: filters.shopRef }),
+        ...(unfiledKey === '' ? {} : { unfiled: true }),
+        ...(queryKey.length === 0 ? {} : { query: queryKey }),
       })
-      .catch((cause: unknown) => {
-        if (alive) {
-          const message = cause instanceof Error ? cause.message : String(cause)
-          setState(prev => (prev.items.length > 0
-            ? { phase: 'ready', items: prev.items }
-            : { phase: 'error', items: [], error: message }))
-        }
-      })
-    return () => { alive = false }
-  }, [runtime, connected, platformKey, shopKey, statusKey, queryKey, nonce])
-
-  return { state, reload }
+      if (!result.ok) throw failure(result.error)
+      return result.value.items
+    },
+  )
 }
 
-/** Fetch the batch list; polled by the panel while a batch is in flight. */
-export function useBatchList(
+/** Review filter the draft queue holds. */
+export interface DraftListFilters {
+  readonly status?: CollectDraftStatus
+  readonly target?: CollectDraftTarget
+}
+
+/** Fetch agent drafts, newest first. */
+export function useDraftList(
   runtime: RxlabClientRuntime | undefined,
   connected: boolean,
-): ListController<CollectBatchSummary> {
-  const [state, setState] = useState<FetchState<CollectBatchSummary>>({ phase: 'loading', items: [] })
-  const [nonce, setNonce] = useState(0)
-  const started = useRef(false)
-  const reload = useCallback(() => { setNonce(value => value + 1) }, [])
-
-  useEffect(() => {
-    if (runtime === undefined || !connected) return
-    let alive = true
-    if (!started.current) {
-      started.current = true
-      setState({ phase: 'loading', items: [] })
-    }
-    void runtime.remote.rxlabCollect.listBatches({})
-      .then((result) => {
-        if (!alive) return
-        if (!result.ok) {
-          setState(prev => (prev.items.length > 0
-            ? { phase: 'ready', items: prev.items }
-            : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
-          return
-        }
-        setState({ phase: 'ready', items: result.value.batches })
+  filters: DraftListFilters,
+): ListController<CollectDraft> {
+  const statusKey = filters.status ?? ''
+  const targetKey = filters.target ?? ''
+  return useList<CollectDraft>(
+    runtime,
+    connected,
+    [statusKey, targetKey].join('\u0000'),
+    async (client) => {
+      const result = await client.remote.rxlabCollect.listDrafts({
+        ...(filters.status === undefined ? {} : { status: filters.status }),
+        ...(filters.target === undefined ? {} : { target: filters.target }),
       })
-      .catch((cause: unknown) => {
-        if (alive) {
-          const message = cause instanceof Error ? cause.message : String(cause)
-          setState(prev => (prev.items.length > 0
-            ? { phase: 'ready', items: prev.items }
-            : { phase: 'error', items: [], error: message }))
-        }
-      })
-    return () => { alive = false }
-  }, [runtime, connected, nonce])
-
-  return { state, reload }
+      if (!result.ok) throw failure(result.error)
+      return result.value.drafts
+    },
+  )
 }
 
-/** One batch plus its in-flight polling status. */
-export interface BatchDetailController {
-  readonly state: FetchState<CollectBatch>
-  /** Stop polling and force one last fetch. */
-  readonly stopAndReload: () => void
+/** Register or replace one shop; throws the readable failure text. */
+export async function shopUpsert(
+  runtime: RxlabClientRuntime,
+  draft: CollectShopDraft,
+): Promise<CollectShop> {
+  const result = await runtime.remote.rxlabCollect.upsertShop({ shop: draft })
+  if (!result.ok) throw failure(result.error)
+  return result.value.shop
 }
 
-/**
- * Fetch one full batch (with per-link items) and poll while it is queued or
- * running. The poll stops on its own once the batch settles.
- * @param runtime - ready client runtime.
- * @param connected - whether the browser transport generation is established.
- * @param batchId - target batch; absent keeps the state empty.
- */
-export function useBatchDetail(
-  runtime: RxlabClientRuntime | undefined,
-  connected: boolean,
-  batchId: CollectBatchId | undefined,
-): BatchDetailController {
-  const [state, setState] = useState<FetchState<CollectBatch>>({ phase: 'loading', items: [] })
-  const [nonce, setNonce] = useState(0)
-  const prevKey = useRef<string | null>(null)
-  const reload = useCallback(() => { setNonce(value => value + 1) }, [])
-  const [polling, setPolling] = useState(false)
-
-  useEffect(() => {
-    if (runtime === undefined || !connected || batchId === undefined) {
-      prevKey.current = null
-      setState({ phase: 'loading', items: [] })
-      return
-    }
-    const keyChanged = prevKey.current !== batchId
-    prevKey.current = batchId
-    let alive = true
-    // Only switching to a different batch (or the first read) clears the
-    // current row; in-flight polls keep the batch visible without a flash.
-    if (keyChanged) setState({ phase: 'loading', items: [] })
-    const fetchOnce = (): void => {
-      void runtime.remote.rxlabCollect.getBatch({ id: batchId })
-        .then((result) => {
-          if (!alive) return
-          if (!result.ok) {
-            setState(prev => (prev.items.length > 0
-              ? { phase: 'ready', items: prev.items }
-              : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
-            setPolling(false)
-            return
-          }
-          const batch = result.value.batch
-          setState({ phase: 'ready', items: [batch] })
-          const running = batch.status === 'queued' || batch.status === 'running'
-          setPolling(running)
-        })
-        .catch((cause: unknown) => {
-          if (alive) {
-            const message = cause instanceof Error ? cause.message : String(cause)
-            setState(prev => (prev.items.length > 0
-              ? { phase: 'ready', items: prev.items }
-              : { phase: 'error', items: [], error: message }))
-            setPolling(false)
-          }
-        })
-    }
-    fetchOnce()
-    const timer = window.setInterval(() => {
-      if (polling) fetchOnce()
-    }, 1500)
-    return () => { alive = false; window.clearInterval(timer) }
-  }, [runtime, connected, batchId, nonce, polling])
-
-  const stopAndReload = useCallback(() => { setPolling(false); reload() }, [reload])
-  return { state, stopAndReload }
+/** Delete one shop; its product entries return to unfiled. Throws the readable failure text. */
+export async function shopRemove(
+  runtime: RxlabClientRuntime,
+  id: CollectShopId,
+): Promise<{ unfiled: number }> {
+  const result = await runtime.remote.rxlabCollect.removeShop({ id })
+  if (!result.ok) throw failure(result.error)
+  return { unfiled: result.value.unfiled }
 }
 
-/** Open one link's capture history, newest first. */
-export function useLinkCaptures(
-  runtime: RxlabClientRuntime | undefined,
-  connected: boolean,
-  linkId: CollectLinkId | undefined,
-): ListController<CollectCapture> {
-  const [state, setState] = useState<FetchState<CollectCapture>>({ phase: 'loading', items: [] })
-  const [nonce, setNonce] = useState(0)
-  const prevKey = useRef<string | null>(null)
-  const reload = useCallback(() => { setNonce(value => value + 1) }, [])
-
-  useEffect(() => {
-    if (runtime === undefined || !connected || linkId === undefined) {
-      prevKey.current = null
-      setState({ phase: 'loading', items: [] })
-      return
-    }
-    const keyChanged = prevKey.current !== linkId
-    prevKey.current = linkId
-    let alive = true
-    if (keyChanged) setState({ phase: 'loading', items: [] })
-    void runtime.remote.rxlabCollect.listCaptures({ linkId, limit: 30 })
-      .then((result) => {
-        if (!alive) return
-        if (!result.ok) {
-          setState(prev => (prev.items.length > 0
-            ? { phase: 'ready', items: prev.items }
-            : { phase: 'error', items: [], error: `${result.error.code}: ${result.error.message}` }))
-          return
-        }
-        setState({ phase: 'ready', items: result.value.captures })
-      })
-      .catch((cause: unknown) => {
-        if (alive) {
-          const message = cause instanceof Error ? cause.message : String(cause)
-          setState(prev => (prev.items.length > 0
-            ? { phase: 'ready', items: prev.items }
-            : { phase: 'error', items: [], error: message }))
-        }
-      })
-    return () => { alive = false }
-  }, [runtime, connected, linkId, nonce])
-
-  return { state, reload }
-}
-
-/** Create or replace one link; throws the readable failure text. */
+/** Create or replace one product entry; throws the readable failure text. */
 export async function linkUpsert(
   runtime: RxlabClientRuntime,
   draft: CollectLinkDraft,
 ): Promise<{ merged: boolean }> {
   const result = await runtime.remote.rxlabCollect.upsertLink({ link: draft })
-  if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+  if (!result.ok) throw failure(result.error)
   return { merged: result.value.merged }
 }
 
-/** Delete one link; throws the readable failure text. */
+/** Delete one product entry; throws the readable failure text. */
 export async function linkRemove(runtime: RxlabClientRuntime, id: CollectLinkId): Promise<void> {
   const result = await runtime.remote.rxlabCollect.removeLink({ id })
-  if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+  if (!result.ok) throw failure(result.error)
 }
 
-/** Import links from CSV text; returns the server's import summary. */
+/** Import product entries from CSV text into one shop; returns the server's import summary. */
 export async function importLinks(
   runtime: RxlabClientRuntime,
   text: string,
+  shopRef: CollectShopId | undefined,
 ): Promise<{ created: number; updated: number; rejected: readonly { row: number; reason: string }[] }> {
-  const result = await runtime.remote.rxlabCollect.importLinks({ text })
-  if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+  const result = await runtime.remote.rxlabCollect.importLinks({
+    text,
+    ...(shopRef === undefined ? {} : { shopRef }),
+  })
+  if (!result.ok) throw failure(result.error)
   return {
     created: result.value.created.length,
     updated: result.value.updated.length,
@@ -300,12 +236,27 @@ export async function importLinks(
   }
 }
 
-/** Start one run batch over the given links; throws the readable failure text. */
-export async function createBatch(
+/**
+ * Accept one pending draft. The optional shop files an accepted product entry
+ * under it, overriding whatever the draft proposed.
+ */
+export async function draftCommit(
   runtime: RxlabClientRuntime,
-  linkIds: readonly CollectLinkId[],
-): Promise<CollectBatchId> {
-  const result = await runtime.remote.rxlabCollect.createBatch({ linkIds })
-  if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-  return result.value.batch.id
+  id: CollectDraftId,
+  shopRef: CollectShopId | undefined,
+): Promise<{ created: CollectShop | CollectLink }> {
+  const result = await runtime.remote.rxlabCollect.commitDraft({
+    id,
+    ...(shopRef === undefined ? {} : { shopRef }),
+  })
+  if (!result.ok) throw failure(result.error)
+  const created = result.value.shop ?? result.value.link
+  if (created === undefined) throw new Error('草稿已确认，但服务端未返回落库记录')
+  return { created }
+}
+
+/** Reject one pending draft; nothing is written. */
+export async function draftReject(runtime: RxlabClientRuntime, id: CollectDraftId): Promise<void> {
+  const result = await runtime.remote.rxlabCollect.rejectDraft({ id })
+  if (!result.ok) throw failure(result.error)
 }

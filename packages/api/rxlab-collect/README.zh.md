@@ -1,5 +1,5 @@
 ---
-description: "rxlab 商品采集:rxlab_collect 存储域(链接资产、采集记录、运行批次)、类型化 rxlabCollect Remote、自挂载 Client 贡献、确定性 L1 JD 采集器,以及 agent 浏览(browser-use)界面与采集 agent preset。"
+description: "rxlab 商品采集:rxlab_collect 存储域(已登记店铺、挂在店铺下的商品条目、助手待确认草稿)、类型化 rxlabCollect Remote、自挂载 Client 贡献,以及只做分析、草稿由人工确认的采集 agent preset。"
 kind: "package-reference"
 ---
 # rxlab 采集(rxlab Collect)
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-rxlab-collect` 拥有 rxlab 商品采集数据。Host 侧提供 `ctx.collectController` 服务与生成式 `ctx.remote.rxlabCollect` 命名空间,读写 `rxlab_collect` 存储域(version 2,per-record;version 1 的 capture 记录仍可读),含三张表 —— `links`(平台/店铺/商品链接资产)、`captures`(每次成功抓取一条记录)与 `batches`(串行运行状态,逐链接条目)。抓取由确定性 L1 采集器执行(v1 内置 JD 适配器,匿名 headless chromium),整条运行链路**零 token、无需模型 key**。本包同时拥有 agent 浏览(browser-use)界面:一个基于持久化登录 chromium 的 `CollectBrowserSession` 与模型侧 `browser_*`/`collect_discover_submit` 工具,随内置 `collect` agent preset 组装,使一个会话能通过浏览发现店铺与商品链接并直接入库 —— CSV 导入不再是链接资产的唯一入口。Client 侧该包是 `dsh.client` 行,其 `/client` bundle 自行挂载命名空间,使 rxlab SPA 在装配 rxlab-product 数据的位置装载采集器。本包刻意不加入平台 `api-remotes` 装配:采集器是 rxlab 产品数据,不是通用 Host 能力。raw 采集域是将来商品 Wiki 导入器的数据源;本包不写 `rxlab_catalog`。
+`@deepseek-ai/dsh-rxlab-collect` 拥有 rxlab 商品采集台账。Host 侧提供 `ctx.collectController` 服务与生成式 `ctx.remote.rxlabCollect` 命名空间,读写 `rxlab_collect` 存储域(version 3,per-record;version 1、2 的 link 记录仍可读),含三张表 —— `shops`(人工登记的 平台 + 店铺)、`links`(挂在店铺下的商品条目)与 `drafts`(等待人工决定的助手草稿)。**人工录入是唯一事实来源**:每个商品字段都由人工填写(单条或 CSV 批量),不从网页读取任何内容 —— 本包不含采集器、不含浏览器,因此既不需要模型 key,也不需要 headless chromium。内置 `collect` agent preset 挂载的是一套**只做分析**的工具:agent 读取人工交给它的材料,`collect_list_*` 查询让它不会重复提议,`collect_draft_submit` 只记录 pending 草稿 —— 只有人工确认才会把草稿变成店铺或商品条目。Client 侧该包是 `dsh.client` 行,其 `/client` bundle 自行挂载命名空间,使 rxlab SPA 在装配 rxlab-product 数据的位置装载台账。本包刻意不加入平台 `api-remotes` 装配:这是 rxlab 产品数据,不是通用 Host 能力。导入商品 Wiki 仍在 catalog 侧完成(`rxlabCatalog.importCollected`);本包不写 `rxlab_catalog`。
 
 ## 目录
 
@@ -22,17 +22,21 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-rxlab profile 组装一行 `rxlab-collect`(`@deepseek-ai/dsh-rxlab-collect`)。Host Loader 激活 `CollectController` 服务:在其生命周期内经 `ctx.storageDomain` 打开 `rxlab_collect` 域并在 Typert Gateway 注册 `rxlabCollect` 命名空间;执行器注册表把平台映射到确定性 `Collector`,controller 在服务生命周期内持有一个懒启动的 headless chromium。SPA 的 headless client 启动会激活本包自带的 `/client` bundle(modules 节点在 `/plugins` 下提供),其 `apply` 挂载生成式 Remote 贡献,于是 `remote.rxlabCollect.*` 在浏览器内可用。rxlab profile 同时组装 `agent-presets` 名单行,SPA 可在内置 `collect` preset 上创建会话(见下)。
+rxlab profile 组装一行 `rxlab-collect`(`@deepseek-ai/dsh-rxlab-collect`)。Host Loader 激活 `CollectController` 服务:在其生命周期内经 `ctx.storageDomain` 打开 `rxlab_collect` 域并在 Typert Gateway 注册 `rxlabCollect` 命名空间。SPA 的 headless client 启动会激活本包自带的 `/client` bundle(modules 节点在 `/plugins` 下提供),其 `apply` 挂载生成式 Remote 贡献,于是 `remote.rxlabCollect.*` 在浏览器内可用。rxlab profile 同时组装 `agent-presets` 名单行,SPA 可在内置 `collect` preset 上创建会话(见下)。
 
-**链接资产是入口**:单条 `upsertLink`,`importLinks`(CSV 文本;表头 `platform,url` + 可选 `shopId`/`shopName`/`sku`/`title`,逐行独立校验,拒绝行返回 UI),或 agent 的 `collect_discover_submit`(同样的逐条校验;平台缺失时由 host 从 url 推断)。共享 平台+规范化URL 的行会合并。`createBatch` 把所选链接 id 排成一个串行批次;批次在进程内逐条执行(1 s 礼貌间隔),每个条目**在提交点**一次性落盘 capture 行、link 状态/last-* 字段与 batch 条目/计数。`listLinks` 按平台/店铺/状态与不区分大小写查询过滤;`listBatches`/`getBatch` 暴露批次进度;`listCaptures` 返回某链接的采集历史(新→旧)。
+**店铺是组织单位。** `upsertShop` 登记或替换一个店铺(平台、名称、可选的平台侧标识、店铺主页、备注),`listShops` 按平台与不区分大小写的 名称/标识/主页 查询过滤。店铺不做去重:带 id 即替换该行,不带 id 总是新建,因此人工改名不会与相邻行相撞。`removeShop` 从不删除商品数据 —— 该店铺下的每个条目失去店铺归属并回到「未归类」,回执给出被释放的条数。
 
-**Agent 浏览(browser use)。** 另有两个插件行挂载 agent 界面:`@deepseek-ai/dsh-rxlab-collect/browser` 提供 `ctx.collectBrowser` —— 一个带两种启动模式的 `CollectBrowserSession`。`persistent`(默认)持有本包自己的 Playwright persistent context,其 user-data 目录(config `profileDir`,默认在 harness home 下)让平台登录态跨重启保留;`cdp` 通过 Chrome DevTools Protocol 连接一个已在运行的真实浏览器(config `cdpEndpoint`,默认 `http://127.0.0.1:9222`),复用其真实登录态与指纹。浏览器会话是 rxlab bundle 里与 `rxlab-collect` 同层的 HOST 行:一机一实例、一份登录 profile/浏览器,并发的采集会话共享它,而不是争抢 Playwright 的同目录进程锁。`@deepseek-ai/dsh-rxlab-collect/tools` 注册模型侧工具:`browser_navigate`、`browser_snapshot`、`browser_click`、`browser_type`、`browser_scroll`、`browser_back`、`browser_login`、`collect_discover_submit` 与 `collect_list_links`。快照把页面渲染为可读文本加上有上限的可交互元素 ref(注入 `data-dsh-ref` 属性);每个操作都返回新快照。`browser_login` 在 persistent 模式切换为有头窗口、打开平台登录页,在等待期间(config `loginTimeoutMs`)由人工登录,然后恢复无头并校验登录态是否保留;在 cdp 模式则直接在真实浏览器里打开页面并轮询登录检测 —— 人工在那边登录,cookie 即凭证。内置 `collect` agent preset(`packages/preset/agent-presets/presets/collect/`)挂载工具行,与 `tool-web`、`tool-todo`、`tool-ask-user` 组装在一起,persona 承载发现工作流(计划、对照 `collect_list_links` 去重、浏览公开入口、分批提交发现、请求人工登录、汇报)。rxlab host 行默认使用自有的 persistent profile;`dsh rxlab --cdp` 把它切到 CDP 接管,且 CDP 只在浏览工具首次执行时才连接 —— 浏览器未开时快速失败并给出启动指引,不会阻碍 app 启动。
+**商品条目由人工录入。** `upsertLink` 接收完整条目(归属店铺、url、标题、价格文本、sku、已选规格、规格参数名值对、主图 url、购买链接、备注);共享 平台 + 规范化 URL 的条目会合并为一行,因此同一商品录两次是更新而非重复。`importLinks` 从 CSV 文本批量创建(表头 `url` + 可选 `platform`/`sku`/`title`,逐行独立校验,拒绝行返回 UI),并把接受的每一行归到请求指定的店铺。`listLinks` 按平台、某个店铺或「未归类」集合过滤,另有一个不区分大小写的 标题/sku/url 查询。`getLink` 读取单条,`removeLink` 删除单条。
 
-JD 采集器访问 canonical 移动页 `item.m.jd.com/product/<sku>`:读清洗后的标题与默认选中变体标签,触发页面「分享 → 复制链接」拿到分享购买链接,从桌面页读显示价格(失败时回退移动页自身价格文本),从 `og:image` meta 读主图,并把桌面页的规格参数表抓成 `params` 名值对(品牌/材质/尺寸/重量...)。价格连同原文与说明一起落盘(注明显示价可能是促销/会员价),因此定时重采可刷新它。这些 capture 字段正是商品 Wiki 导入(`rxlabCatalog.importCollected`)消费的数据源。
+**助手提议,人工决定。** `collect_draft_submit` 记录 agent 从材料中提取的条目;每条独立校验并以 `pending` 草稿入库,不会触碰店铺或商品表。`listDrafts` 暴露队列(可按状态与目标过滤),`commitDraft` 在一次调用里写入草稿提议的条目并把它标记为 accepted(商品草稿可由人工指定归属店铺,覆盖草稿自带的值),`rejectDraft` 标记为 rejected 且不写入任何东西。已结算的草稿再操作会以 `collect/draft-not-pending` 拒绝。
 
-Wire 与持久类型在 `./types`(浏览器安全 JSON,无运行时代码);zod 在 Host 侧 `src/domain.ts`;纯解析/规范化助手在 `src/executor/parse.ts`,快照/回执的纯格式化在 `src/browse/snapshot.ts` + `src/tools.ts`(有单测,不触网)。
+**Agent 工具(会话级)。** `@deepseek-ai/dsh-rxlab-collect/tools` 注册 `collect_draft_submit`、`collect_list_shops` 与 `collect_list_links`,并带一个解释草稿契约的 `tool:collect` 系统提示分区。内置 `collect` agent preset(`packages/preset/agent-presets/presets/collect/`)把该行与 `tool-web`、`tool-ask-user`、`tool-todo` 组装在一起,persona 要求它读取人工给出的材料(粘贴文本,或人工给出、可公开抓取的 url)、提议前先查台账,并明确告知它**无法写台账**。preset 不含任何浏览器工具:分析是它唯一的能力。
 
-**运行时不变式：** 不发布运行时不变式伴生包（companion）：`rxlab_collect` 持久 schema 拥有 link/capture/batch 关系，抓取走既有 executor 接缝，没有可独立观测而发散的关系。
+域 version 3 新增 `shops` 与 `drafts`,下架了退役的 `captures` 与 `batches`;两者的 document 仍留在介质上,不再被声明或读取。`compatibleVersions` 列出 1 与 2,因为当前 link schema 仍接受那些存量记录 —— 遗留字段 `shopId`、`shopName`、`titleAtAdd` 保留声明且可读(UI 显示 `title ?? titleAtAdd`),而 controller 不再写入它们。
+
+Wire 与持久类型在 `./types`(浏览器安全 JSON,无运行时代码);zod 在 Host 侧 `src/domain.ts`;纯解析/规范化助手在 `src/parse.ts`,回执/列表的纯格式化在 `src/tools.ts`(有单测,不触网)。
+
+**运行时不变式：** 不发布运行时不变式伴生包(companion)：`rxlab_collect` 持久 schema 拥有 店铺/条目/草稿 关系，且每次写入都经过 controller 自身的校验，没有可独立观测而发散的关系。
 
 -----
 
@@ -43,27 +47,25 @@ Wire 与持久类型在 `./types`(浏览器安全 JSON,无运行时代码);zod �
 
 #### 模型可见什么
 
-组装在内置 `collect` preset 上的会话携带 `browser_*`、`collect_discover_submit`、`collect_list_links` 工具 schema 与一个 `tool:browser` 系统提示分区;确定性采集链路不注册任何模型可见的东西。仅挂载基础 `rxlab-collect` 行时不注册任何东西:没有 prompt、工具或会话事件,抓取无需模型 key。
+组装在内置 `collect` preset 上的会话携带 `collect_draft_submit`、`collect_list_shops`、`collect_list_links` 工具 schema 与一个 `tool:collect` 系统提示分区。仅挂载基础 `rxlab-collect` 行时不注册任何东西:没有 prompt、工具或会话事件,台账无需模型 key 即可工作。
 
 #### Token 影响
 
-组装在 `collect` preset 上的会话,其每次模型请求都携带挂载的工具 schema 与 `tool:browser` 分区;采集运行与变更不向模型请求增加任何内容。
+组装在 `collect` preset 上的会话,其每次模型请求都携带挂载的工具 schema 与 `tool:collect` 分区;人工录入、草稿审阅与台账变更不向模型请求增加任何内容。
 
 #### KV Cache 影响
 
-会话内稳定:工具 schema 与提示分区在会话组装时挂载一次,其前缀贡献与系统提示其余部分一样进入缓存;采集数据变更从不使其失效。
+会话内稳定:工具 schema 与提示分区在会话组装时挂载一次,其前缀贡献与系统提示其余部分一样进入缓存;台账数据变更从不使其失效。
 
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 图廊详情图 URL 未采集:JD 图廊懒渲染、无稳定 DOM URL,`detailImageUrls` 留空;`mainImageUrl` 是 `og:image` meta 的尽力读取。
-- 结构化规格只来自桌面页参数表:匿名会话够不到客户端水合参数表的页面,只剩标题与变体文本作为规格信号。
-- 价格为尽力而为:部分网络下 JD 会给匿名 headless 会话返回无价格文本的风控页,此时采集保留 标题/变体/购买链接 而省略价格字段;在暖机或登录态浏览器会话下重采可刷新。
-- 确定性采集内置 JD(item.jd.com)与 淘宝/天猫(item/detail …item.htm)两款采集器,均匿名运行并在登录/风控页快速失败(某平台风控时可用另一平台继续)。Agent 发现仅覆盖 JD 登录:`browser_login` 内置一个流程(`jd`);其他平台只能浏览公开页面。登录为人工 —— persistent 模式在有头窗口里完成,cdp 模式在真实浏览器里完成 —— host 上所有会话共享一个 profile/浏览器,无多账号或凭据存储;persistent profile 目录清空即需重新登录。
-- JD 风控会从机房出口 IP 拦截 `search.jd.com` 与桌面 `item.jd.com` 页(登录前后均"访问频繁"/403);agent preset 已教授绕行路径(`so.m.jd.com/chanpin/<关键词>` 聚合页与 `item.m.jd.com/product/<sku>` H5 页),这才是这类 IP 下可靠的公开页面。
-- 定时重采(M2)未做;目前失败重试为手动(重跑该行/新批次)。
-- 包仅有纯解析与格式化逻辑单测;Host controller、网络 executor 与浏览会话尚无 spec(合入 master 前需补齐以满足逐文件覆盖率门),且无 invariant companion(无独立可分歧观测)。
+- 设计上不做任何自动采集。确定性 JD/淘宝采集器与浏览器发现界面已随域 version 3 移除;每个字段都来自人工,或来自人工确认过的草稿,因此条目的完整程度取决于录入时的材料。
+- version 1、2 为退役的 `captures` 与 `batches` 写入的 document 留在介质上,不再被声明或读取。既无迁移,UI 也无入口。
+- 遗留 link 记录保留 `shopId` 与 `shopName` 文本,但不属于任何店铺:在人工归位之前,它们出现在「未归类」列表里。
+- 助手草稿只是提议,永远不是事实来源:未被确认的草稿不改变任何东西;格式错误的条目在提交时连同原因被拒绝,而不是被修补。
+- 包对纯解析/格式化助手与 Host controller 的 店铺/条目/草稿 流程有单测;工具 handler 的参数校验与 SPA 面板尚无 spec。
 - raw 域对 catalog 保持只读:Wiki 导入在 catalog 侧运行(`rxlabCatalog.importCollected`),本包不写 `rxlab_catalog`。
 
 -----
@@ -74,6 +76,6 @@ Wire 与持久类型在 `./types`(浏览器安全 JSON,无运行时代码);zod �
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-JD 采集器驱动匿名 headless chromium。首次运行需装浏览器:`pnpm --filter @deepseek-ai/dsh-rxlab-collect run setup:browsers`(或 `pnpm exec playwright install chromium`)。运行刻意低频(串行队列、1 s 间隔、仅公开页面);请遵守平台条款,勿批量滥用。
+本模块不需要浏览器,也不需要平台账号:无需安装任何东西,只需尊重人工自己的数据。`pnpm --filter @deepseek-ai/dsh-rxlab-collect run bundle` 重建 Host、tools 与 Client bundle;`rxlab_collect` 域在部署的存储后端所服务的位置打开(`rxlab-app` 把它路由到 workspace 存储根)。
 
 </details>

@@ -31,7 +31,6 @@ Start the workbench with `dsh rxlab`; the launcher composes the profile from thi
 | `--host` | `127.0.0.1` | Bind host for the workbench server (`0.0.0.0` is rejected) |
 | `--port` | `3081` | Bind port; chosen to run beside the web profile's 3080 |
 | `--no-open` | off | Skip opening the canonical URL in a browser |
-| `--cdp` | off | Attach the collect agent's browser session to a real browser over Chrome DevTools Protocol instead of the owned persistent profile |
 
 The SPA talks to the host through the `/api` Remote channel; rxlab data lands under `$DSH_HOME/storages-rxlab`, sessions under `sessions-rxlab`, and settings under `settings-rxlab.yaml`, so the profile can run beside the web profile over the same home without sharing business data. Credentials stay shared so models keep working.
 
@@ -45,7 +44,7 @@ The SPA talks to the host through the `/api` Remote channel; rxlab data lands un
 
 ### Patch surface over base
 
-The patch replaces whole base rows by id (a patch row restates every key it owns) and inserts the rxlab rows: `rxlab-startup` (commander parsing of the flags, providing `rxlabStartup`), `webserver` and `connection` (bind values and the `/api` trust fence supplied by `rxlabStartup`/`rxlabRuntime`), `rxlab-runtime` (this bundle's glue: resolves the built frontend dist, mounts the frontend-static fallback owner, registers the rxlab surface prompt section, prints the URL line, opens the browser, and provides `rxlabRuntime` after the server binds), the session Remote surface rows, the rxlab business rows `rxlab-catalog` and `rxlab-collect`, the `rxlab-collect-browser` host row, and the `agent-presets` roster. Data isolation rides per-row overrides of `settings`, `session-persistence-jsonl`, and `storage-json`.
+The patch replaces whole base rows by id (a patch row restates every key it owns) and inserts the rxlab rows: `rxlab-startup` (commander parsing of the flags, providing `rxlabStartup`), `webserver` and `connection` (bind values and the `/api` trust fence supplied by `rxlabStartup`/`rxlabRuntime`), `rxlab-runtime` (this bundle's glue: resolves the built frontend dist, mounts the frontend-static fallback owner, registers the rxlab surface prompt section, prints the URL line, opens the browser, and provides `rxlabRuntime` after the server binds), the session Remote surface rows, the rxlab business rows `rxlab-catalog` and `rxlab-collect`, and the `agent-presets` roster. Data isolation rides per-row overrides of `settings`, `session-persistence-jsonl`, and `storage-json`.
 
 ### Source map
 
@@ -83,7 +82,6 @@ Stable: the persona is fixed per surface and the preset roster mounts per sessio
 
 - **The frontend dist is an assembly fact** — the profile serves the built `@deepseek-ai/dsh-rxlab-web-frontend/dist`; the dist is not committed, so a source checkout must build the frontend before `dsh rxlab` can serve it.
 - **Shared browser-auth copy** — a request without a token gets the shared dsh browser-authentication page, whose wording still says "dsh web"; a rxlab-specific rendering is a polish item.
-- **One login profile per host** — the collect agent's persistent browser profile is shared by every session on the machine; `--cdp` attaches to a separately started real browser (default `http://127.0.0.1:9222`) and fails fast with guidance when it is not reachable.
 - **Business-module coverage** — the 验光配镜/推荐校验/效果图 modules are planned panels; the persona states they are not connected instead of inventing tools for them.
 
 <a id="dev-note"></a>

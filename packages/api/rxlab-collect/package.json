@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-rxlab-collect",
-  "description": "rxlab product collection assets: the rxlab_collect storage domain (links / captures / batches) plus its typed Collect Remote (rxlabCollect), self-mounting Client contribution, and the deterministic L1 link collector",
+  "description": "rxlab product collect assets: the rxlab_collect storage domain (shops / product entries / agent drafts) plus its typed Collect Remote (rxlabCollect) and self-mounting Client contribution. Hand-entry first — every product field is entered by a person or confirmed from an agent draft, and nothing is captured automatically",
   "version": "0.1.0-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -21,14 +21,6 @@
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
-    },
-    "./browser": {
-      "types": "./lib/types/browser.d.ts",
-      "default": "./lib/browser.js"
-    },
-    "./browser-launch": {
-      "types": "./lib/types/browser-launch.d.ts",
-      "default": "./lib/browser-launch.js"
     },
     "./tools": {
       "types": "./lib/types/tools.d.ts",
@@ -59,14 +51,11 @@
   },
   "scripts": {
     "bundle": "tsdown",
-    "watch": "tsdown --watch",
-    "setup:browsers": "playwright install chromium"
+    "watch": "tsdown --watch"
   },
   "files": [
     "lib/index.js",
     "lib/client.js",
-    "lib/browser.js",
-    "lib/browser-launch.js",
     "lib/tools.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
@@ -79,7 +68,6 @@
   "dependencies": {
     "@deepseek-ai/dsh-storage-domain": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "playwright": "^1.62.1",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -89,7 +77,6 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-api-gateway": "workspace:^",
     "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-storage": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",

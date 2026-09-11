@@ -40,6 +40,8 @@ apps/rxlab-web/dist/
 .artifacts/
 .dsh-build/
 .playwright-mcp/
+.reasonix/
+reasonix.toml
 .orig
 .worktrees/
 worktrees/

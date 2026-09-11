@@ -367,20 +367,18 @@ export function buildImportDraft(
     ...(request.listing.selectedSku === undefined ? {} : { selectedSku: request.listing.selectedSku }),
     ...(request.listing.params === undefined ? {} : { params: request.listing.params }),
   })
-  const capturedAt = request.source.capturedAt ?? new Date(0).toISOString()
+  const importedAt = new Date().toISOString()
   const source = {
     platform: request.source.platform,
     url: request.source.url,
     linkId: request.source.linkId,
     ...(request.source.shopName === undefined ? {} : { shopName: request.source.shopName }),
     ...(request.source.sku === undefined ? {} : { sku: request.source.sku }),
-    ...(request.source.captureId === undefined ? {} : { captureId: request.source.captureId }),
-    capturedAt,
+    capturedAt: importedAt,
   }
   const reading = request.listing.price === undefined ? undefined : {
     value: request.listing.price,
-    capturedAt,
-    ...(request.source.captureId === undefined ? {} : { captureId: request.source.captureId }),
+    capturedAt: importedAt,
     ...(request.listing.priceRaw === undefined ? {} : { note: request.listing.priceRaw }),
   }
   const priceHistory = reading === undefined

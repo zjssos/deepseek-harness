@@ -380,8 +380,6 @@ export interface CatalogImportRequest {
     readonly linkId: string
     readonly shopName?: string | undefined
     readonly sku?: string | undefined
-    readonly captureId?: string | undefined
-    readonly capturedAt?: string | undefined
   }
   /** Captured listing fields to extract attributes from. */
   readonly listing: CollectedListing

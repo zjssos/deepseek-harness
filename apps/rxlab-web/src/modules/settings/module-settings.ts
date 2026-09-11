@@ -7,7 +7,6 @@
  */
 import {
   agentDefaultModelDescriptor,
-  collectBrowserDescriptor,
   llmDeepseekDescriptor,
 } from '@/rxlab/settings-form/hints'
 import type { NamespaceDescriptor } from '@/rxlab/settings-form/types'
@@ -20,18 +19,14 @@ export interface ModuleNamespaceSection {
 
 /**
  * Modules whose settings surface is wired. Agent owns the model / thinking
- * deployment namespaces; collect owns its browser knobs; the remaining modules
- * (wiki/fitting) expose no settings namespaces yet, so their hub sections stay
- * read-only until their own agent integration lands.
+ * deployment namespaces; the remaining modules (collect/wiki/fitting) expose
+ * no settings namespaces, so their hub sections stay read-only until their own
+ * integration lands.
  */
 export const MODULE_NAMESPACE_SECTIONS: readonly ModuleNamespaceSection[] = [
   {
     moduleId: 'agent',
     namespaces: [llmDeepseekDescriptor, agentDefaultModelDescriptor],
-  },
-  {
-    moduleId: 'collect',
-    namespaces: [collectBrowserDescriptor],
   },
 ]
 

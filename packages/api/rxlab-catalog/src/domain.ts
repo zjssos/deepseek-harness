@@ -210,8 +210,6 @@ export const catalogImportRequestSchema = z.object({
     linkId: z.string().trim().min(1).max(64),
     shopName: z.string().trim().max(200).optional(),
     sku: z.string().trim().max(200).optional(),
-    captureId: z.string().trim().min(1).max(64).optional(),
-    capturedAt: z.string().trim().min(1).max(40).optional(),
   }),
   listing: collectedListingSchema,
 })

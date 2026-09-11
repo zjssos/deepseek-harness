@@ -95,7 +95,6 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`node-pty`](https://github.com/microsoft/node-pty) | MIT |
 | [`open`](https://github.com/sindresorhus/open) | MIT |
 | [`picomatch`](https://github.com/micromatch/picomatch) | MIT |
-| [`playwright`](https://github.com/microsoft/playwright) | Apache-2.0 |
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
 | [`readable-stream`](https://github.com/nodejs/readable-stream) | MIT |
@@ -205,6 +204,7 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`next-themes`](https://github.com/pacocoursey/next-themes) | MIT |
 | [`oxlint`](https://github.com/oxc-project/oxc) | MIT |
 | [`oxlint-tsgolint`](https://github.com/oxc-project/tsgolint) | MIT |
+| [`playwright`](https://github.com/microsoft/playwright) | Apache-2.0 |
 | [`pnpm`](https://github.com/pnpm/pnpm) | MIT |
 | [`publint`](https://github.com/publint/publint) | MIT |
 | [`radix-ui`](https://github.com/radix-ui/primitives) | MIT |

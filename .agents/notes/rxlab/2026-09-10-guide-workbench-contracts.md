@@ -92,7 +92,7 @@ jobUsage({ jobId: JobId }): { totals: UsageTotals; cost?: number; currency?: str
 ## settings 命名空间
 
 - 新增 `rxlab-recommend-rules`（schema：`indexLadder`、`sizeBand`、`decentrationCapMm`、`cylinderStepD`），由 `rxlab-recommend` 的 Host 行注册，`applies: 'restart'`，设置模块可编辑。
-- 既有 `rxlab-workspace`、`rxlab-module-agents`、`rxlab-collect-browser` 不变。
+- 既有 `rxlab-workspace`、`rxlab-module-agents` 不变。
 
 ## 工具与 preset
 
