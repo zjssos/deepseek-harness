@@ -7,7 +7,7 @@ import ContentController from '../src/index.ts'
 import type { ContentItemDraft } from '../src/types.ts'
 
 /** Boot the content controller over an in-memory storage backend. */
-async function boot(pool?: MemoryMediaPool): Promise<{ ctx: Context; controller: ContentController }> {
+async function boot(pool?: MemoryMediaPool, config?: { seed?: boolean }): Promise<{ ctx: Context; controller: ContentController }> {
   const ctx = new Context()
   await ctx.plugin(Storage)
   const backend = new MemoryStorageBackend(pool)
@@ -16,7 +16,7 @@ async function boot(pool?: MemoryMediaPool): Promise<{ ctx: Context; controller:
   const DomainPlugin = await import('@deepseek-ai/dsh-storage-domain')
   await ctx.plugin(DomainPlugin, { backend: 'memory' })
   await vi.waitFor(() => { expect(ctx.storageDomain).toBeInstanceOf(DomainFacilityClass) })
-  await ctx.plugin(ContentController)
+  await ctx.plugin(ContentController, config ?? { seed: false })
   await vi.waitFor(() => { expect(ctx.contentController).toBeInstanceOf(ContentController) })
   return { ctx, controller: ctx.contentController }
 }
@@ -113,5 +113,32 @@ describe('delete', () => {
   it('reports false when no record carries the id', async () => {
     const { controller } = await boot()
     await expect(controller.delete({ id: 'missing' as never })).resolves.toEqual({ removed: false })
+  })
+})
+
+describe('seed', () => {
+  it('populates baseline entries on first open when seed is true', async () => {
+    const { controller } = await boot(undefined, { seed: true })
+    const { items } = await controller.list({})
+    expect(items.length).toBeGreaterThan(0)
+    const knowledgeItems = await controller.list({ kind: 'knowledge' })
+    const scriptItems = await controller.list({ kind: 'script' })
+    expect(knowledgeItems.items.length).toBeGreaterThan(0)
+    expect(scriptItems.items.length).toBeGreaterThan(0)
+  })
+
+  it('does not seed when the domain already has entries', async () => {
+    const { controller } = await boot(undefined, { seed: true })
+    const countAfterSeed = (await controller.list({})).items.length
+    expect(countAfterSeed).toBeGreaterThan(0)
+    await controller.upsert({ item: knowledge({ title: '手工录入' }) })
+    const countWithManual = (await controller.list({})).items.length
+    expect(countWithManual).toBe(countAfterSeed + 1)
+  })
+
+  it('leaves the domain empty when seed is false', async () => {
+    const { controller } = await boot(undefined, { seed: false })
+    const { items } = await controller.list({})
+    expect(items.length).toBe(0)
   })
 })

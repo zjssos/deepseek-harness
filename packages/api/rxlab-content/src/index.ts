@@ -14,6 +14,7 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { z } from 'zod'
 import { contentDomainSpec, contentItemDraftSchema, contentItemSchema } from './domain.ts'
+import { SEED_CONTENT } from './seed.ts'
 import type {
   ContentDeleteRequest,
   ContentDeleteValue,
@@ -55,6 +56,12 @@ function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, subject: string):
   })
 }
 
+/** Plugin config: controls whether baseline content is seeded on first open. */
+export interface ContentControllerConfig {
+  /** Seed baseline knowledge and script entries on first open (default true). */
+  seed?: boolean
+}
+
 /**
  * Host service backing the generated `ctx.remote.rxlabContent` namespace.
  * Reads are synchronous from the open domain; writes queue on the domain's
@@ -65,20 +72,45 @@ export class ContentController extends TypertRemoteService {
   static inject = ['storageDomain']
 
   private table?: KvTable<ContentItemId, StoredContentItem>
+  private readonly seed: boolean
 
   /**
    * Register the content namespace on the Typert Gateway.
    * @param ctx - Host context carrying the storage-domain facility.
+   * @param config - optional plugin config.
    */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: ContentControllerConfig = {}) {
     super(ctx, 'contentController', { namespace: 'rxlabContent' })
+    this.seed = config.seed ?? true
   }
 
-  /** Open the content domain for the life of this controller. */
+  /** Open the content domain for the life of this controller, seeding baseline entries on first run. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(contentDomainSpec)
     this.ctx.effect(() => () => domain.close(), 'rxlab_content.domainClose')
     this.table = domain.table('items')
+    if (this.seed) await this.seedIfEmpty()
+  }
+
+  /**
+   * Write baseline knowledge and script entries when the domain is empty.
+   * A person's own curation always takes precedence: the seeder runs only on
+   * the very first open and never overwrites existing rows.
+   */
+  private async seedIfEmpty(): Promise<void> {
+    const table = this.table
+    if (table === undefined) return
+    if ([...table.entries()].length > 0) return
+
+    for (const draft of SEED_CONTENT) {
+      const id = newContentItemId()
+      const item = contentItemSchema.parse({
+        ...draft,
+        id,
+        updatedAt: new Date().toISOString(),
+      })
+      await table.put(id, item)
+    }
   }
 
   /**
