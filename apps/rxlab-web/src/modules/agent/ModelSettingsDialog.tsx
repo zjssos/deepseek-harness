@@ -1,5 +1,13 @@
-import { useEffect, useState } from 'react'
-import { CircleAlert, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Check,
+  CircleAlert,
+  Eye,
+  EyeOff,
+  Loader2,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,185 +19,376 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import type { RxlabClientRuntime } from '@/rxlab/client'
-import { AgentSettingsSection } from '@/rxlab/settings-form/AgentSettingsSection'
 import {
   clearCredential,
-  DEFAULT_API_KEY_REF,
   setCredential,
   useCredential,
 } from '@/rxlab/use-credentials'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { updateNamespace, useSettingsDescribe } from '@/rxlab/use-settings'
 
 export interface ModelSettingsDialogProps {
   readonly runtime: RxlabClientRuntime
   readonly connected: boolean
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
+  /** Reload the model catalog after a provider switch or key save. */
+  readonly onProviderChanged?: () => void
 }
 
+/** Known provider presets for the quick-switch cards. */
+interface ProviderPreset {
+  readonly id: string
+  readonly label: string
+  readonly description: string
+  /** `agent-default-model` provider value. */
+  readonly provider: string
+  /** `agent-default-model` model value. */
+  readonly model: string
+  /** Credential reference for the API key. */
+  readonly credentialRef: string
+  /**
+   * Extra settings writes required to activate this provider's adapter.
+   * Each entry is `[namespace, patch]`. DeepSeek needs nothing (always
+   * active); OpenCode Go must populate the `llm-pi-ai` providers dict.
+   */
+  readonly activationWrites: readonly ActivationWrite[]
+}
+
+interface ActivationWrite {
+  readonly ns: string
+  readonly patch: Record<string, JsonValue>
+}
+
+const PROVIDER_PRESETS: readonly ProviderPreset[] = [
+  {
+    id: 'deepseek',
+    label: 'DeepSeek 官方',
+    description: '直连 api.deepseek.com，模型参数由 DeepSeek 下发。',
+    provider: 'deepseek-official',
+    model: 'deepseek-v4-flash',
+    credentialRef: 'DEEPSEEK_API_KEY',
+    activationWrites: [],
+  },
+  {
+    id: 'opencode-go',
+    label: 'OpenCode Go',
+    description: '国内多模型网关（DeepSeek / GLM / Kimi / Qwen 等），模型与参数由 OpenCode 托管。',
+    provider: 'opencode-go',
+    model: 'deepseek-v4-flash',
+    credentialRef: 'OPENCODE_GO_API_KEY',
+    activationWrites: [
+      {
+        ns: 'llm-pi-ai',
+        patch: {
+          providers: {
+            // 主路由：pi-ai 内置 opencode-go 目录（27 个模型），端点、协议由目录下发。
+            'opencode-go': {
+              apiKeyEnv: 'OPENCODE_GO_API_KEY',
+            },
+            // 补充路由：pi-ai 目录暂未收录的 completions 协议模型。
+            'opencode-go-ext-cc': {
+              displayName: 'OpenCode Go (补充·CC)',
+              apiKeyEnv: 'OPENCODE_GO_API_KEY',
+              api: 'openai-completions',
+              baseURL: 'https://opencode.ai/zen/go/v1',
+              models: [
+                { id: 'deepseek-v4.1-flash' },
+                { id: 'deepseek-flash' },
+                { id: 'glm-5' },
+                { id: 'kimi-k2.5' },
+                { id: 'mimo-v2.6-flash' },
+                { id: 'mimo-v2.6-pro' },
+                { id: 'mimo-v2-pro' },
+                { id: 'mimo-v2-omni' },
+                { id: 'hy3-preview' },
+              ],
+            },
+            // 补充路由：pi-ai 目录暂未收录的 messages 协议模型。
+            'opencode-go-ext-msg': {
+              displayName: 'OpenCode Go (补充·MSG)',
+              apiKeyEnv: 'OPENCODE_GO_API_KEY',
+              api: 'anthropic-messages',
+              baseURL: 'https://opencode.ai/zen/go',
+              models: [
+                { id: 'minimax-m2.5' },
+                { id: 'qwen3.5-plus' },
+              ],
+            },
+            // 补充路由：pi-ai 目录暂未收录的 responses 协议模型。
+            'opencode-go-ext-rsp': {
+              displayName: 'OpenCode Go (补充·RSP)',
+              apiKeyEnv: 'OPENCODE_GO_API_KEY',
+              api: 'openai-responses',
+              baseURL: 'https://opencode.ai/zen/go/v1',
+              models: [
+                { id: 'grok-4.7' },
+                { id: 'grok-4.5' },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  },
+]
+
 /**
- * Agent settings dialog: the agent module's seat of the shared agent settings
- * surface (module-default model / thinking / context namespaces) plus the
- * DeepSeek credential editor. Scope is module-default level — sessions run on
- * these deployment defaults; per-session overrides land with the later
- * agent-integration work.
+ * Agent settings dialog — only two decisions: pick a provider and set its Key.
+ * Model catalog, thinking mode, context window, and other parameters are
+ * resolved by the provider itself; the Composer model selector handles
+ * per-session model overrides.
+ *
+ * Switching to OpenCode Go also writes the `llm-pi-ai` settings namespace so
+ * the dormant adapter wakes up and registers its catalog routes.
  */
-export function ModelSettingsDialog({ runtime, connected, open, onOpenChange }: ModelSettingsDialogProps) {
-  const [ref, setRef] = useState(DEFAULT_API_KEY_REF)
+export function ModelSettingsDialog({
+  runtime, connected, open, onOpenChange, onProviderChanged,
+}: ModelSettingsDialogProps) {
+  const describe = useSettingsDescribe(runtime, connected)
+  const [notice, setNotice] = useState<{ text: string; kind: 'info' | 'error' } | null>(null)
+
+  const activeProvider = useMemo(() => {
+    if (describe.state.status !== 'ready') return undefined
+    const view = describe.state.value.namespaces.find(ns => ns.ns === 'agent-default-model')
+    if (view === undefined) return undefined
+    const value = view.value
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+    return (value as Record<string, unknown>).provider as string | undefined
+  }, [describe.state])
+
+  const revisionOf = (ns: string): number | undefined => {
+    if (describe.state.status !== 'ready') return undefined
+    return describe.state.value.namespaces.find(entry => entry.ns === ns)?.revision
+  }
+
+  useEffect(() => {
+    if (open) {
+      describe.reload()
+      setNotice(null)
+    }
+  }, [open, describe.reload])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>接入商</DialogTitle>
+          <DialogDescription>
+            选择提供方并填入 Key，模型和参数由提供方自动下发。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-3">
+          {PROVIDER_PRESETS.map(preset => (
+            <ProviderCard
+              key={preset.id}
+              runtime={runtime}
+              preset={preset}
+              active={activeProvider === preset.provider}
+              revisionOf={revisionOf}
+              onSwitch={() => {
+                setNotice({ text: `已切换到 ${preset.label}，模型目录刷新中…`, kind: 'info' })
+                describe.reload()
+                onProviderChanged?.()
+              }}
+              onKeySaved={() => {
+                setNotice({ text: 'Key 已保存，模型目录刷新中…', kind: 'info' })
+                onProviderChanged?.()
+              }}
+              onError={(message) => { setNotice({ text: message, kind: 'error' }) }}
+            />
+          ))}
+        </div>
+
+        {notice !== null ? (
+          <div className={[
+            'flex items-start gap-2 rounded-md px-3 py-2 text-xs',
+            notice.kind === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-muted/60',
+          ].join(' ')}>
+            <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+            <span>{notice.text}</span>
+          </div>
+        ) : null}
+
+        <p className="text-center text-[11px] text-muted-foreground">
+          具体模型可在聊天输入框的模型选择器里按会话切换。
+        </p>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** One provider card: status + credential editor + one-click switch. */
+function ProviderCard({
+  runtime, preset, active, revisionOf, onSwitch, onKeySaved, onError,
+}: {
+  readonly runtime: RxlabClientRuntime
+  readonly preset: ProviderPreset
+  readonly active: boolean
+  readonly revisionOf: (ns: string) => number | undefined
+  readonly onSwitch: () => void
+  readonly onKeySaved: () => void
+  readonly onError: (message: string) => void
+}) {
+  const credential = useCredential(runtime, preset.credentialRef)
   const [secret, setSecret] = useState('')
   const [showSecret, setShowSecret] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
-  const credential = useCredential(runtime, ref)
-  const { reload } = credential
-  const effectiveRef = ref.trim().length > 0 ? ref.trim() : DEFAULT_API_KEY_REF
 
-  // Refresh the described state whenever the dialog opens.
-  useEffect(() => {
-    if (open) reload()
-  }, [open, reload])
-
-  const save = async (): Promise<void> => {
-    if (secret.trim().length === 0 || busy) return
+  const switchTo = async (): Promise<void> => {
+    if (busy) return
     setBusy(true)
-    setNotice(null)
     try {
-      const ok = await setCredential(runtime, effectiveRef, secret.trim())
-      if (ok) {
-        setSecret('')
-        setNotice(`已保存到 ${effectiveRef}（$DSH_HOME/.credentials.yaml），下一条消息即使用该凭据。`)
-        credential.reload()
-      } else {
-        setNotice('保存失败：host 拒绝了该写入（只读部署或凭据服务不可用）。')
+      // 1) Write activation settings (e.g. llm-pi-ai provider profile).
+      for (const write of preset.activationWrites) {
+        const result = await updateNamespace(runtime, write.ns, write.patch, revisionOf(write.ns))
+        if (result === null) {
+          onError(`激活失败：写入 ${write.ns} 被拒绝。`)
+          return
+        }
       }
+      // 2) Switch the default model provider.
+      const result = await updateNamespace(
+        runtime,
+        'agent-default-model',
+        { provider: preset.provider, model: preset.model },
+        revisionOf('agent-default-model'),
+      )
+      if (result !== null) onSwitch()
+      else onError('切换失败：写入 agent-default-model 被拒绝。')
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : String(cause))
+      onError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setBusy(false)
     }
   }
 
-  const clear = async (): Promise<void> => {
-    if (busy) return
+  const saveKey = async (): Promise<void> => {
+    if (secret.trim().length === 0 || busy) return
     setBusy(true)
-    setNotice(null)
     try {
-      const ok = await clearCredential(runtime, effectiveRef)
+      const ok = await setCredential(runtime, preset.credentialRef, secret.trim())
       if (ok) {
-        setNotice(`已清除 ${effectiveRef}。`)
+        setSecret('')
         credential.reload()
+        onKeySaved()
       } else {
-        setNotice('清除失败：host 拒绝了该写入。')
+        onError('保存凭据失败。')
       }
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : String(cause))
+      onError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const clearKey = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const ok = await clearCredential(runtime, preset.credentialRef)
+      if (ok) credential.reload()
+      else onError('清除凭据失败。')
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Agent 设置</DialogTitle>
-          <DialogDescription>
-            编辑会话模块的默认设置：模型提供方、思考模式与上下文等写入
-            <code className="mx-1 rounded bg-muted px-1 font-mono text-[11px]">settings-rxlab.yaml</code>，
-            新建与后续请求即按新默认运行；会话内的模型仍可在输入栏单独切换。
-          </DialogDescription>
-        </DialogHeader>
+    <div
+      className={[
+        'flex flex-col gap-2.5 rounded-lg border p-3 transition-colors',
+        active ? 'border-primary bg-primary/5' : 'hover:border-muted-foreground/30',
+      ].join(' ')}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Zap className={`size-4 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
+          <span className="text-sm font-medium">{preset.label}</span>
+        </div>
+        {active ? (
+          <Badge className="gap-1"><Check className="size-3" />当前</Badge>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2.5 text-xs"
+            disabled={busy}
+            onClick={() => { void switchTo() }}
+          >
+            {busy ? <Loader2 className="size-3 animate-spin" /> : null}
+            切换
+          </Button>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground">{preset.description}</p>
 
-        <ScrollArea className="max-h-[68vh] pr-3">
-          <div className="flex flex-col gap-4 py-1">
-            <AgentSettingsSection runtime={runtime} connected={connected} />
+      {/* Key 状态 */}
+      <div className="flex items-center gap-2">
+        <Badge
+          variant={credential.configured ? 'secondary' : 'outline'}
+          className="gap-1 text-[10px]"
+        >
+          {credential.status === 'loading'
+            ? <Loader2 className="size-2.5 animate-spin" />
+            : credential.configured ? <ShieldCheck className="size-2.5" /> : null}
+          {credential.status === 'loading'
+            ? '检查中'
+            : credential.configured ? 'Key 已配置' : 'Key 未配置'}
+        </Badge>
+        <span className="font-mono text-[10px] text-muted-foreground">{preset.credentialRef}</span>
+      </div>
 
-            <Separator />
-
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-medium">DeepSeek 凭据</h3>
-                <Badge
-                  variant={credential.configured ? 'secondary' : 'outline'}
-                  className="gap-1"
-                >
-                  {credential.status === 'loading'
-                    ? <Loader2 className="size-3 animate-spin" />
-                    : credential.configured ? <ShieldCheck className="size-3" /> : null}
-                  {credential.status === 'loading'
-                    ? '检查中…'
-                    : credential.configured ? '已配置' : credential.status === 'error' ? '状态不可用' : '未配置'}
-                </Badge>
-                {credential.error !== undefined && !credential.configured
-                  ? <span className="text-xs text-destructive">describe 失败：{credential.error}</span>
-                  : null}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="model-ref">凭据引用（环境变量名）</Label>
-                <Input
-                  id="model-ref"
-                  value={ref}
-                  onChange={(event) => { setRef(event.target.value); credential.reload() }}
-                  spellCheck={false}
-                  className="font-mono text-sm"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  deepseek-official 适配器按“模型提供方”分区中的 apiKeyEnv 读取该凭据，默认 DEEPSEEK_API_KEY。
-                </p>
-              </div>
-              {!credential.configured ? (
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="model-secret">API Key</Label>
-                  <div className="relative">
-                    <Input
-                      id="model-secret"
-                      type={showSecret ? 'text' : 'password'}
-                      value={secret}
-                      onChange={(event) => { setSecret(event.target.value) }}
-                      placeholder="sk-…"
-                      spellCheck={false}
-                      autoComplete="off"
-                      className="pr-9 font-mono text-sm"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
-                      onClick={() => { setShowSecret(value => !value) }}
-                      aria-label={showSecret ? '隐藏' : '显示'}
-                    >
-                      {showSecret ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-              {notice !== null ? (
-                <div className="flex items-start gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs">
-                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-                  <span className="whitespace-pre-wrap">{notice}</span>
-                </div>
-              ) : null}
-              <div className="flex justify-end gap-2">
-                {credential.configured ? (
-                  <Button variant="outline" onClick={() => { void clear() }} disabled={busy}>
-                    {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-                    清除
-                  </Button>
-                ) : (
-                  <Button onClick={() => { void save() }} disabled={busy || secret.trim().length === 0}>
-                    {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-                    保存凭据
-                  </Button>
-                )}
-              </div>
-            </div>
+      {/* Key 编辑 / 清除 */}
+      {credential.configured ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-fit px-2 text-xs text-muted-foreground"
+          disabled={busy}
+          onClick={() => { void clearKey() }}
+        >
+          清除 Key
+        </Button>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <Input
+              type={showSecret ? 'text' : 'password'}
+              value={secret}
+              onChange={(event) => { setSecret(event.target.value) }}
+              placeholder="sk-…"
+              spellCheck={false}
+              autoComplete="off"
+              className="h-7 pr-7 font-mono text-[11px]"
+              onKeyDown={(event) => { if (event.key === 'Enter') void saveKey() }}
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="absolute right-0.5 top-1/2 size-6 -translate-y-1/2"
+              onClick={() => { setShowSecret(value => !value) }}
+              aria-label={showSecret ? '隐藏' : '显示'}
+            >
+              {showSecret ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+            </Button>
           </div>
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+          <Button
+            size="sm"
+            className="h-7 shrink-0 px-2.5 text-xs"
+            disabled={busy || secret.trim().length === 0}
+            onClick={() => { void saveKey() }}
+          >
+            {busy ? <Loader2 className="size-3 animate-spin" /> : null}
+            保存
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }

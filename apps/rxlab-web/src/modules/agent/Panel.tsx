@@ -202,7 +202,13 @@ function SessionWorkbench({ runtime }: { runtime: RxlabClientRuntime }) {
             />
           )}
       </main>
-      <ModelSettingsDialog runtime={runtime} connected={connected} open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ModelSettingsDialog
+        runtime={runtime}
+        connected={connected}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onProviderChanged={modelState.reload}
+      />
     </div>
   )
 }

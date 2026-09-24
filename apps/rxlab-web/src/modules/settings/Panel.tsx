@@ -1,8 +1,9 @@
 /**
- * 全局设置 workbench: 各模块的 settings 分区（describe 视图驱动的标量编辑）
- * 与 Agent 预设管理（roster 列表/默认/复制/删除）。zh copy until the app gains
- * a locale dictionary; reads and writes the same settings-rxlab.yaml the host
- * owns, so edits apply without a restart for `applies: live` namespaces.
+ * 全局设置 workbench: 工作空间概况、各模块状态一览、Agent 预设管理。
+ *
+ * Agent 接入商 / Key 配置已移到 Agent 模块对话框（ModelSettingsDialog），
+ * 这里只保留模块概况和预设管理，不再重复暴露 llm-deepseek / agent-default-model
+ * 的详细字段编辑。zh copy until the app gains a locale dictionary.
  */
 import { useMemo, useState } from 'react'
 import { CircleAlert, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
@@ -10,7 +11,6 @@ import { CircleAlert, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PanelHeader } from '@/components/panel-header'
@@ -25,201 +25,30 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets/types'
-import type { SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ModulePanelProps } from '@/modules/types'
 import { MODULES } from '@/modules/registry'
 import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
 import type { RxlabClientRuntime } from '@/rxlab/client'
-import { SettingsSection } from '@/rxlab/settings-form/AgentSettingsSection'
 import { WorkspaceInfoBlock } from '@/rxlab/settings-form/WorkspaceInfoBlock'
 import {
   AGENT_PRESETS_NAMESPACE, copyPreset, deletePreset, setDefaultPreset,
-  updateNamespace, unsetNamespaceField, useModuleAgents, usePresetRoster,
-  useSettingsDescribe, useWorkspaceRoot,
+  useModuleAgents, usePresetRoster, useSettingsDescribe, useWorkspaceRoot,
 } from '@/rxlab/use-settings'
-import { MODULE_NAMESPACE_SECTIONS, namespaceSectionsOf } from './module-settings'
 
-const NAMESPACE_LABELS: Record<string, string> = {
-  'llm-deepseek': 'DeepSeek 模型',
-  'llm-pi-ai': 'PI-AI 模型',
-  'agent-presets': 'Agent 预设',
-  'web': 'Web 搜索 / 抓取',
-  'permission-presets': '权限预设',
-  'rxlab-workspace': '工作台工作空间',
-}
+/* ── Module overview tab ─────────────────────────────────────────────── */
 
-function namespaceLabel(ns: string): string {
-  return NAMESPACE_LABELS[ns] ?? ns
-}
-
-function asRecord(value: JsonValue): Record<string, JsonValue> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value
-    : null
-}
-
-type Scalar =
-  | { readonly kind: 'string'; readonly value: string }
-  | { readonly kind: 'number'; readonly value: number }
-  | { readonly kind: 'boolean'; readonly value: boolean }
-  | { readonly kind: 'other' }
-
-function scalarOf(value: JsonValue): Scalar {
-  if (typeof value === 'string') return { kind: 'string', value }
-  if (typeof value === 'number') return { kind: 'number', value }
-  if (typeof value === 'boolean') return { kind: 'boolean', value }
-  return { kind: 'other' }
-}
-
-function FieldEditor({
-  runtime, view, field, value, userOverridden, onSaved,
-}: {
-  runtime: RxlabClientRuntime
-  view: SettingsNamespaceView
-  field: string
-  value: JsonValue
-  userOverridden: boolean
-  onSaved: (next: SettingsNamespaceView) => void
-}) {
-  const scalar = scalarOf(value)
-  const [draft, setDraft] = useState<string>(scalar.kind === 'string' ? scalar.value : scalar.kind === 'number' ? String(scalar.value) : '')
-  const [busy, setBusy] = useState(false)
-
-  if (scalar.kind === 'other') {
-    return (
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="font-mono text-xs text-muted-foreground">{field}</span>
-        <code className="min-w-0 truncate font-mono text-xs text-muted-foreground">{JSON.stringify(value)}</code>
-      </div>
-    )
-  }
-
-  if (scalar.kind === 'boolean') {
-    const save = async (next: boolean): Promise<void> => {
-      setBusy(true)
-      const saved = await updateNamespace(runtime, view.ns, { [field]: next }, view.revision)
-      setBusy(false)
-      if (saved !== null) onSaved(saved)
-    }
-    return (
-      <div className="flex items-center justify-between gap-3 py-2">
-        <Label className="font-mono text-xs text-muted-foreground">{field}</Label>
-        <Checkbox
-          checked={scalar.value}
-          disabled={busy}
-          onCheckedChange={(checked) => { void save(checked === true) }}
-        />
-      </div>
-    )
-  }
-
-  const commit = async (): Promise<void> => {
-    if (busy) return
-    if (scalar.kind === 'string') {
-      const saved = await updateNamespace(runtime, view.ns, { [field]: draft }, view.revision)
-      if (saved !== null) onSaved(saved)
-      return
-    }
-    const parsed = Number(draft)
-    if (Number.isNaN(parsed)) return
-    const saved = await updateNamespace(runtime, view.ns, { [field]: parsed }, view.revision)
-    if (saved !== null) onSaved(saved)
-  }
-
-  return (
-    <div className="flex items-center gap-2 py-2">
-      <Label className="shrink-0 font-mono text-xs text-muted-foreground">{field}</Label>
-      <Input
-        className="h-8 flex-1"
-        value={draft}
-        type={scalar.kind === 'number' ? 'number' : 'text'}
-        onChange={(event) => { setDraft(event.target.value) }}
-        onKeyDown={(event) => { if (event.key === 'Enter') void commit() }}
-      />
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => { void commit() }}>保存</Button>
-      {userOverridden ? (
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => { void unsetField(runtime, view, field, onSaved) }}>清除</Button>
-      ) : null}
-    </div>
-  )
-}
-
-/** Remove one field's user override so it re-inherits the composition base. */
-async function unsetField(
-  runtime: RxlabClientRuntime,
-  view: SettingsNamespaceView,
-  field: string,
-  onSaved: (next: SettingsNamespaceView) => void,
-): Promise<void> {
-  const saved = await unsetNamespaceField(runtime, view.ns, field, view.revision)
-  if (saved !== null) onSaved(saved)
-}
-
-function NamespaceCard({
-  runtime, view, onSaved,
-}: {
-  runtime: RxlabClientRuntime
-  view: SettingsNamespaceView
-  onSaved: (next: SettingsNamespaceView) => void
-}) {
-  const record = asRecord(view.value)
-  const user = asRecord(view.user ?? null)
-  const fields = record === null ? [] : Object.entries(record)
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm">{namespaceLabel(view.ns)}</CardTitle>
-          <div className="flex items-center gap-1">
-            {view.applies === 'restart' ? <Badge variant="secondary">需重启</Badge> : <Badge variant="secondary">即时生效</Badge>}
-          </div>
-        </div>
-        <CardDescription className="font-mono text-xs">{view.ns}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {fields.length === 0 ? (
-          <p className="text-xs text-muted-foreground">该分区没有可编辑的标量字段。</p>
-        ) : fields.map(([field, value]) => (
-          <FieldEditor
-            key={field}
-            runtime={runtime}
-            view={view}
-            field={field}
-            value={value}
-            userOverridden={user !== null && field in user}
-            onSaved={onSaved}
-          />
-        ))}
-      </CardContent>
-    </Card>
-  )
-}
-
-function ModuleSettingsTab({
+function ModuleOverviewTab({
   runtime, connected,
 }: { runtime: RxlabClientRuntime | undefined; connected: boolean }) {
   const { state, reload } = useSettingsDescribe(runtime, connected)
   const workspaceRoot = useWorkspaceRoot(runtime, connected)
   const moduleAgents = useModuleAgents(runtime, connected)
-  const [savedViews, setSavedViews] = useState<ReadonlyMap<string, SettingsNamespaceView>>(new Map())
-
-  const views = useMemo(() => {
-    if (state.status !== 'ready') return []
-    const overrides = new Map(savedViews)
-    return state.value.namespaces.map(view => overrides.get(view.ns) ?? view)
-  }, [state, savedViews])
 
   if (runtime === undefined || !connected) {
     return <p className="text-sm text-muted-foreground">数据层未就绪。</p>
   }
   if (state.status === 'loading') {
-    return (
-      <div className="flex flex-col gap-3">
-        <Skeleton className="h-24" />
-        <Skeleton className="h-24" />
-      </div>
-    )
+    return <div className="flex flex-col gap-3"><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
   }
   if (state.status === 'error') {
     return (
@@ -230,16 +59,6 @@ function ModuleSettingsTab({
     )
   }
 
-  const onSaved = (next: SettingsNamespaceView): void => {
-    setSavedViews(prev => new Map(prev).set(next.ns, next))
-  }
-
-  const ownedNamespaces = new Set<string>(
-    MODULE_NAMESPACE_SECTIONS.flatMap(section => section.namespaces.map(descriptor => descriptor.ns)),
-  )
-  ownedNamespaces.add(AGENT_PRESETS_NAMESPACE)
-  const remaining = views.filter(view => !ownedNamespaces.has(view.ns))
-
   const sessionDirOf = (moduleId: string): string => {
     const config = moduleAgents[moduleId]
     return config === undefined ? '工作空间根目录' : `工作空间/${config.subdir}`
@@ -249,13 +68,26 @@ function ModuleSettingsTab({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          {state.value.writable ? '写入直接落到 settings-rxlab.yaml。' : '当前部署为只读，无法保存修改。'}
+          {state.value.writable ? '设置文件：settings-rxlab.yaml' : '当前部署为只读。'}
         </p>
         <Button size="sm" variant="outline" onClick={reload}>
           <RefreshCw data-icon="inline-start" />刷新
         </Button>
       </div>
 
+      {/* 工作空间 */}
+      {workspaceRoot !== undefined ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">工作空间</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <WorkspaceInfoBlock rows={[{ label: '根目录', value: workspaceRoot, mono: true }]} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* 各模块概况 */}
       {MODULES.filter(module => module.id !== 'settings').map((module) => {
         const active = module.status === 'active'
         return (
@@ -268,50 +100,29 @@ function ModuleSettingsTab({
               </div>
               <CardDescription className="line-clamp-1">{module.tagline}</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3">
+            <CardContent>
               <WorkspaceInfoBlock
                 rows={[
                   { label: '会话目录', value: sessionDirOf(module.id), mono: true },
                   { label: '模块范围', value: `${module.scope.length} 项` },
                 ]}
               />
-              {namespaceSectionsOf(module.id).length > 0
-                ? (
-                  <SettingsSection
-                    runtime={runtime}
-                    connected={connected}
-                    descriptors={namespaceSectionsOf(module.id)}
-                  />
-                )
-                : (
-                  <p className="text-xs text-muted-foreground">
-                    {active
-                      ? '该模块当前无可编辑设置；运行参数由 host 插件配置（cordis.yml / settings namespace）管理。'
-                      : '模块规划中，接入后再提供设置。'}
-                  </p>
-                )}
+              {module.id === 'agent' ? (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  接入商和 Key 请在 Agent 面板的设置对话框中管理。
+                </p>
+              ) : !active ? (
+                <p className="mt-2 text-[11px] text-muted-foreground">模块规划中，接入后再提供设置。</p>
+              ) : null}
             </CardContent>
           </Card>
         )
       })}
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">其他分区（Host 全局）</CardTitle>
-          <CardDescription>不属于某个工作台模块的部署分区，与工作空间等 host 级设置并列编辑。</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {workspaceRoot !== undefined ? (
-            <WorkspaceInfoBlock rows={[{ label: '工作空间根目录', value: workspaceRoot, mono: true }]} />
-          ) : null}
-          {remaining.map(view => (
-            <NamespaceCard key={view.ns} runtime={runtime} view={view} onSaved={onSaved} />
-          ))}
-        </CardContent>
-      </Card>
     </div>
   )
 }
+
+/* ── Preset management tab ───────────────────────────────────────────── */
 
 function PresetTab({
   runtime, connected,
@@ -356,7 +167,7 @@ function PresetTab({
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          会话按 process-wide 组装运行；此处管理预设目录与默认值，供后续按模块独立组装预设时使用。
+          预设管理：设为默认 / 复制 / 删除。
         </p>
         <Button size="sm" variant="outline" onClick={reload}>
           <RefreshCw data-icon="inline-start" />刷新
@@ -420,6 +231,8 @@ function PresetTab({
     </div>
   )
 }
+
+/* ── Dialogs ─────────────────────────────────────────────────────────── */
 
 function CopyDialog({
   runtime, source, onClose, onCopied,
@@ -506,6 +319,8 @@ function DeleteDialog({
   )
 }
 
+/* ── Root panel ──────────────────────────────────────────────────────── */
+
 export default function SettingsPanel(props: ModulePanelProps) {
   const { runtime } = useRxlabClient()
   const connected = useConnected(runtime)
@@ -524,11 +339,11 @@ export default function SettingsPanel(props: ModulePanelProps) {
       <ScrollArea className="h-(--workbench-full-height)">
         <Tabs defaultValue="modules">
           <TabsList>
-            <TabsTrigger value="modules">模块设置</TabsTrigger>
+            <TabsTrigger value="modules">模块概况</TabsTrigger>
             <TabsTrigger value="presets">Agent 预设</TabsTrigger>
           </TabsList>
           <TabsContent value="modules" className="mt-3">
-            <ModuleSettingsTab runtime={runtime} connected={connected} />
+            <ModuleOverviewTab runtime={runtime} connected={connected} />
           </TabsContent>
           <TabsContent value="presets" className="mt-3">
             <PresetTab runtime={runtime} connected={connected} />
