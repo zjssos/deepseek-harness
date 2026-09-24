@@ -6,7 +6,7 @@
  * 的详细字段编辑。zh copy until the app gains a locale dictionary.
  */
 import { useMemo, useState } from 'react'
-import { CircleAlert, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { CircleAlert, Download, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-presets/types'
+// Type-only: pulls the generated `remote.rxlabBackup` namespace declarations
+// into the ClientRemote type shared with the rest of the workbench.
+import type {} from '@deepseek-ai/dsh-rxlab-backup/remote'
+import type { BackupBundle } from '@deepseek-ai/dsh-rxlab-backup/types'
 import type { ModulePanelProps } from '@/modules/types'
 import { MODULES } from '@/modules/registry'
 import { useConnected, useRxlabClient } from '@/rxlab/use-sessions'
@@ -319,6 +323,120 @@ function DeleteDialog({
   )
 }
 
+/* ── Data backup tab ─────────────────────────────────────────────────── */
+
+/** Local-time `yyyyMMdd-HHmm` stamp for the download file name. */
+function backupStamp(now: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${String(now.getFullYear())}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+}
+
+function DataBackupTab({
+  runtime, connected,
+}: { runtime: RxlabClientRuntime | undefined; connected: boolean }) {
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  if (runtime === undefined || !connected) {
+    return <p className="text-sm text-muted-foreground">数据层未就绪。</p>
+  }
+  const backup = runtime.remote.rxlabBackup
+  if (backup === undefined) {
+    return <p className="text-sm text-muted-foreground">命名空间未就绪，需重启 dsh rxlab。</p>
+  }
+
+  const onExport = (): void => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    void backup.export({}).then((result) => {
+      setBusy(false)
+      if (!result.ok) {
+        setError(`${result.error.code}: ${result.error.message}`)
+        return
+      }
+      const bundle = result.value.bundle
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `rxlab-backup-${backupStamp(new Date())}.json`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setNotice(`已导出 ${bundle.records.length} 条记录。`)
+    }).catch((cause: unknown) => {
+      setBusy(false)
+      setError(cause instanceof Error ? cause.message : String(cause))
+    })
+  }
+
+  const onImport = (file: File): void => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    void file.text().then((text) => {
+      const bundle = JSON.parse(text) as BackupBundle
+      return backup.import({ bundle })
+    }).then((result) => {
+      setBusy(false)
+      if (!result.ok) {
+        setError(`${result.error.code}: ${result.error.message}`)
+        return
+      }
+      setNotice(`已写入 ${result.value.written} 条，跳过 ${result.value.skipped} 条。导入需重启 dsh rxlab 后生效。`)
+    }).catch((cause: unknown) => {
+      setBusy(false)
+      setError(cause instanceof Error ? cause.message : String(cause))
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-muted-foreground">
+        导出或导入工作空间的全部业务数据（rxlab_* 存储域）。
+      </p>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">导出全部数据</CardTitle>
+          <CardDescription>把工作空间业务数据打包为一个 JSON 文件下载。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button size="sm" variant="outline" disabled={busy} onClick={onExport}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Download data-icon="inline-start" />}
+            导出全部数据
+          </Button>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">导入数据</CardTitle>
+          <CardDescription>选择此前导出的 JSON bundle 写回工作空间；导入后需重启 dsh rxlab 生效。</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <Input
+            type="file"
+            accept="application/json"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file !== undefined) onImport(file)
+              event.target.value = ''
+            }}
+          />
+          {notice !== null ? <p className="text-xs text-muted-foreground">{notice}</p> : null}
+          {error !== null ? (
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 /* ── Root panel ──────────────────────────────────────────────────────── */
 
 export default function SettingsPanel(props: ModulePanelProps) {
@@ -341,12 +459,16 @@ export default function SettingsPanel(props: ModulePanelProps) {
           <TabsList>
             <TabsTrigger value="modules">模块概况</TabsTrigger>
             <TabsTrigger value="presets">Agent 预设</TabsTrigger>
+            <TabsTrigger value="data">数据</TabsTrigger>
           </TabsList>
           <TabsContent value="modules" className="mt-3">
             <ModuleOverviewTab runtime={runtime} connected={connected} />
           </TabsContent>
           <TabsContent value="presets" className="mt-3">
             <PresetTab runtime={runtime} connected={connected} />
+          </TabsContent>
+          <TabsContent value="data" className="mt-3">
+            <DataBackupTab runtime={runtime} connected={connected} />
           </TabsContent>
         </Tabs>
       </ScrollArea>

@@ -65,6 +65,7 @@
     { "path": "./packages/api/session-controller/tsconfig.client.json" },
     { "path": "./packages/api/workspace-controller/tsconfig.client.json" },
     { "path": "./packages/api/remotes/tsconfig.client.json" },
+    { "path": "./packages/api/rxlab-backup/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-catalog/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-collect/tsconfig.client.json" },
     { "path": "./packages/api/rxlab-content/tsconfig.client.json" },

@@ -630,6 +630,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../packages/llm/llm
+      '@deepseek-ai/dsh-rxlab-backup':
+        specifier: workspace:^
+        version: link:../../packages/api/rxlab-backup
       '@deepseek-ai/dsh-rxlab-catalog':
         specifier: workspace:^
         version: link:../../packages/api/rxlab-catalog
@@ -1126,6 +1129,25 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.5.4
+
+  packages/api/rxlab-backup:
+    dependencies:
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+      zod:
+        specifier: ^4.4.3
+        version: 4.5.4
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../gateway
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
 
   packages/api/rxlab-catalog:
     dependencies:
@@ -2177,6 +2199,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-rxlab-backup':
+        specifier: workspace:^
+        version: link:../../api/rxlab-backup
       '@deepseek-ai/dsh-rxlab-catalog':
         specifier: workspace:^
         version: link:../../api/rxlab-catalog

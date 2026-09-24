@@ -339,6 +339,7 @@
       "@deepseek-ai/dsh-pwsh-sandbox": ["./packages/shell/pwsh-sandbox/src"],
       "@deepseek-ai/dsh-repeat-tool-reminder": ["./packages/guard/repeat-tool-reminder/src"],
       "@deepseek-ai/dsh-rxlab-app": ["./packages/bundle/rxlab-app/src"],
+      "@deepseek-ai/dsh-rxlab-backup": ["./packages/api/rxlab-backup/src"],
       "@deepseek-ai/dsh-rxlab-catalog": ["./packages/api/rxlab-catalog/src"],
       "@deepseek-ai/dsh-rxlab-collect": ["./packages/api/rxlab-collect/src"],
       "@deepseek-ai/dsh-rxlab-content": ["./packages/api/rxlab-content/src"],

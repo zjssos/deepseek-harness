@@ -32,6 +32,7 @@ kind: "package-group"
 | [`settings-controller/`](settings-controller/README.zh.md) | 拥有 settings 域各 seam 之上的配置界面读写。 | `ctx.settingsController`、`ctx.credentialsController` / `ctx.remote.settings`、`ctx.remote.credentials` |
 | [`workspace-controller/`](workspace-controller/README.zh.md) | 拥有 Workspace 变更与完整 Client Workspace 投影。 | `ctx.workspaceController` / `ctx.remote.workspace` |
 | [`workspace-files/`](workspace-files/README.zh.md) | 拥有有界的工作区文件访问——`stat`、分页 `read`、`list` 与 agent 写入的 `changes` 流——以及其上的 Client `file` 资源提供者。 | `ctx.workspaceFiles` / `ctx.remote.workspaceFiles` |
+| [`rxlab-backup/`](rxlab-backup/README.zh.md) | 把工作空间 `rxlab_*` 业务存储树打包/还原为一个 JSON bundle，以类型化 `rxlabBackup` Remote 暴露；是自带 Client 装配的 rxlab 业务行。 | `ctx.backupController` / `ctx.remote.rxlabBackup` |
 | [`rxlab-catalog/`](rxlab-catalog/README.zh.md) | 拥有 `rxlab_catalog` 存储域之上的 rxlab 商品 Wiki master data；是自带 Client 装配的 rxlab 业务行。 | `ctx.catalogController` / `ctx.remote.rxlabCatalog` |
 | [`rxlab-content/`](rxlab-content/README.zh.md) | 拥有 rxlab 内容资产：`rxlab_content` 存储域之上按阶段打标签的知识词条与话术模板；是自带 Client 装配的 rxlab 业务行。 | `ctx.contentController` / `ctx.remote.rxlabContent` |
 | [`rxlab-fitting/`](rxlab-fitting/README.zh.md) | 拥有 rxlab 验光配镜模块：`rxlab_fitting` 存储域的分阶段验光记录、确定性处方推导引擎与类型化 `rxlabFitting` Remote；是自带 Client 装配的 rxlab 业务行。 | `ctx.fittingController` / `ctx.remote.rxlabFitting` |
